@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(npx vite *)",
+      "Bash(open *)",
+      "Bash(pbcopy)",
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(curl -s http://localhost:3001/api/health)",
+      "Bash(curl -s http://localhost:3002/api/health)",
+      "Bash(curl -s http://localhost:5175)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5176)",
+      "Bash(curl -s -o /dev/null -w \"Vite:%{http_code}\" http://localhost:5176)",
+      "Bash(curl -s http://localhost:5176/assets/)",
+      "Bash(curl -s http://localhost:5176)",
+      "Bash(awk '{print $2, $11, $12}')",
+      "Bash(kill 18610 18611 18612 18781 18782 18783 18784)",
+      "Read(//tmp/**)",
+      "Bash(curl -s -o /dev/null -w \"Vite: %{http_code}\\\\n\" http://localhost:5175)",
+      "Bash(curl -s http://localhost:3002/api/debug/user)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5175)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  }
+}

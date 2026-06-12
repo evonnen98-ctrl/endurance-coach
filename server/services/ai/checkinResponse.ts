@@ -1,0 +1,73 @@
+import Anthropic from '@anthropic-ai/sdk'
+import { createClient } from '@supabase/supabase-js'
+import type { UserContext } from '../userContext.js'
+
+const client = new Anthropic()
+
+const supabase = createClient(
+  process.env.VITE_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
+const FEELING_LABELS: Record<number, string> = { 1: 'terrible', 2: 'poor', 3: 'okay', 4: 'good', 5: 'great' }
+
+export async function generateCheckinResponse(
+  checkinId: string,
+  feeling: number,
+  soreness_notes: string | undefined,
+  todaySessionId: string | undefined,
+  context: UserContext
+) {
+  let todaySession: any = null
+  if (todaySessionId) {
+    const { data } = await supabase.from('sessions').select('*').eq('id', todaySessionId).single()
+    todaySession = data
+  }
+
+  const prompt = `You are an elite endurance coach. An athlete has just submitted their morning check-in.
+
+ATHLETE: ${context.user.name}
+TODAY'S FEELING: ${FEELING_LABELS[feeling]} (${feeling}/5)
+SORENESS/ISSUES: ${soreness_notes || 'none reported'}
+
+TODAY'S PLANNED SESSION: ${todaySession ? `${todaySession.title} — ${todaySession.description ?? ''} (${todaySession.duration_minutes} min, ${todaySession.effort_zone ?? 'unknown effort'})` : 'rest day'}
+
+RECENT CONTEXT:
+- Week ${context.current_week} of training
+- Goal: ${context.goal?.event_type ?? 'build fitness'}, ${context.goal?.days_until_event ?? 'unknown'} days out
+- Last 3 check-ins: ${context.recent_checkins.slice(0, 3).map(c => `${c.date}: ${c.feeling_label}${c.soreness_notes ? ` (${c.soreness_notes})` : ''}`).join(' | ')}
+- Injury flags: ${context.injury_flags ? 'YES — be conservative' : 'none'}
+
+Respond as a direct, warm coach. Be specific to what they've told you.
+
+If feeling is 4-5 (good/great) with no issues: confirm session as planned in 1-2 sentences.
+If feeling is 3 (okay) with soreness: acknowledge it, suggest minor adjustment or just monitor, keep session.
+If feeling is 1-2 (poor/terrible): suggest a meaningful modification (reduce intensity, shorten session, or swap to easy alternative) with a clear reason.
+
+Return JSON:
+{
+  "coach_response": "Your 1-2 sentence response here",
+  "plan_adjusted": false,
+  "adjustment_details": null
+}
+
+If you recommend a modification, set plan_adjusted to true and describe it in adjustment_details.`
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 500,
+    messages: [{ role: 'user', content: prompt }],
+  })
+
+  const text = response.content[0].type === 'text' ? response.content[0].text : ''
+  const jsonMatch = text.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) {
+    return {
+      coach_response: "Thanks for checking in. Listen to your body today and let me know how the session goes.",
+      plan_adjusted: false,
+      adjustment_details: null,
+    }
+  }
+
+  return JSON.parse(jsonMatch[0])
+}
