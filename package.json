@@ -10,7 +10,7 @@
     "dev": "concurrently \"vite\" \"tsx watch server/index.ts\"",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "start": "tsx server/index.ts",
+    "start": "npm run build && tsx server/index.ts",
     "preview": "vite preview"
   },
   "dependencies": {
