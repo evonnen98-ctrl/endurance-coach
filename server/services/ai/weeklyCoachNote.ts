@@ -1,14 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { createClient } from '@supabase/supabase-js'
 import { format, addDays, parseISO, startOfWeek } from 'date-fns'
 import type { UserContext } from '../userContext.js'
+import { supabase } from '../../lib/supabase.js'
 
 const client = new Anthropic()
-
-const supabase = createClient(
-  process.env.VITE_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
 
 export async function generateWeeklyCoachNote(
   userId: string,

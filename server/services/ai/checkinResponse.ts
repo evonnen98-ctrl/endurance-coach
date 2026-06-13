@@ -1,13 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { createClient } from '@supabase/supabase-js'
 import type { UserContext } from '../userContext.js'
+import { supabase } from '../../lib/supabase.js'
 
 const client = new Anthropic()
-
-const supabase = createClient(
-  process.env.VITE_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
 
 const FEELING_LABELS: Record<number, string> = { 1: 'terrible', 2: 'poor', 3: 'okay', 4: 'good', 5: 'great' }
 

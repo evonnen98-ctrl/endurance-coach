@@ -1,10 +1,5 @@
-import { createClient } from '@supabase/supabase-js'
 import { differenceInDays, parseISO } from 'date-fns'
-
-const supabase = createClient(
-  process.env.VITE_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { supabase } from '../lib/supabase.js'
 
 export interface UserContext {
   user: {
@@ -135,4 +130,3 @@ export async function buildUserContext(userId: string): Promise<UserContext> {
   }
 }
 
-export { supabase }
