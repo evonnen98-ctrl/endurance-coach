@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { buildUserContext } from '../services/userContext.js'
-import { generatePlan } from '../services/ai/planGeneration.js'
+import { generatePlan, generatePlanSkeleton } from '../services/ai/planGeneration.js'
 import { generateCheckinResponse } from '../services/ai/checkinResponse.js'
 import { generatePostWorkoutResponse } from '../services/ai/postWorkoutResponse.js'
 import { generateWeeklyCoachNote } from '../services/ai/weeklyCoachNote.js'
@@ -19,6 +19,48 @@ router.post('/generate-plan', async (req, res) => {
   } catch (err: any) {
     console.error('generate-plan error:', err)
     res.status(500).json({ error: err.message ?? 'Plan generation failed' })
+  }
+})
+
+// SSE endpoint: streams progress events during plan generation
+router.get('/generate-plan-stream', async (req, res) => {
+  const userId = req.query.userId as string
+  if (!userId) { res.status(400).json({ error: 'userId required' }); return }
+
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no')
+  res.flushHeaders()
+
+  const t0 = Date.now()
+  const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`)
+
+  // Hard 20s outer timeout — sends done and closes regardless
+  const hardTimeout = setTimeout(() => {
+    console.warn(`[ai] hard timeout hit at ${Date.now() - t0}ms`)
+    send({ type: 'done' })
+    res.end()
+  }, 20_000)
+
+  try {
+    console.log(`[ai] stream start: ${Date.now() - t0}ms`)
+    send({ type: 'status', message: 'Building your plan…' })
+
+    console.log(`[ai] building user context: ${Date.now() - t0}ms`)
+    const context = await buildUserContext(userId)
+    console.log(`[ai] context ready: ${Date.now() - t0}ms`)
+
+    await generatePlanSkeleton(userId, context, (msg) => send({ type: 'status', message: msg }))
+
+    console.log(`[ai] plan done, total: ${Date.now() - t0}ms`)
+    send({ type: 'done' })
+  } catch (err: any) {
+    console.error(`[ai] error at ${Date.now() - t0}ms:`, err.message)
+    send({ type: 'error', message: err.message ?? 'Plan generation failed' })
+  } finally {
+    clearTimeout(hardTimeout)
+    res.end()
   }
 })
 

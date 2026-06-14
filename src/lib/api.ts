@@ -40,4 +40,13 @@ export const api = {
 
   goalCompletion: (params: { userId: string; goalId: string }) =>
     post<{ success: boolean }>('/ai/goal-completion', params),
+
+  stravaStatus: () =>
+    fetch('/api/strava/status').then(r => r.json()) as Promise<import('../types').StravaConnection>,
+
+  stravaImport: (userId: string) =>
+    post<{ imported: number; skipped: number; total: number }>('/strava/import', { userId }),
+
+  stravaDisconnect: () =>
+    fetch('/api/strava/disconnect', { method: 'DELETE' }).then(r => r.json()),
 }

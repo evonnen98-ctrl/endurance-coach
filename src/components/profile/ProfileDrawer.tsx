@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase, DEMO_USER_ID } from '../../lib/supabase'
+import { api } from '../../lib/api'
 import type { User, Discipline, TrainingStyle } from '../../types'
 
 interface Props {
@@ -16,6 +17,13 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 export default function ProfileDrawer({ user, onClose }: Props) {
   const queryClient = useQueryClient()
   const [name, setName] = useState(user.name)
+  const [importState, setImportState] = useState<'idle' | 'loading' | 'done'>('idle')
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number } | null>(null)
+
+  const { data: stravaConn, refetch: refetchStrava } = useQuery({
+    queryKey: ['strava-status'],
+    queryFn: api.stravaStatus,
+  })
   const [disciplines, setDisciplines] = useState<Discipline[]>(user.disciplines)
   const [style, setStyle] = useState<TrainingStyle>(user.training_style)
   const [ftp, setFtp] = useState(user.ftp?.toString() ?? '')
@@ -28,6 +36,27 @@ export default function ProfileDrawer({ user, onClose }: Props) {
     setDisciplines(prev =>
       prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]
     )
+  }
+
+  async function handleImport() {
+    setImportState('loading')
+    try {
+      const result = await api.stravaImport(DEMO_USER_ID)
+      setImportResult({ imported: result.imported, skipped: result.skipped })
+      await queryClient.invalidateQueries({ queryKey: ['workout-logs'] })
+      await queryClient.invalidateQueries({ queryKey: ['week-sessions'] })
+    } catch {
+      setImportResult(null)
+    } finally {
+      setImportState('done')
+    }
+  }
+
+  async function handleDisconnect() {
+    await api.stravaDisconnect()
+    await refetchStrava()
+    setImportState('idle')
+    setImportResult(null)
   }
 
   async function save() {
@@ -172,6 +201,76 @@ export default function ProfileDrawer({ user, onClose }: Props) {
               onChange={e => setCoachNote(e.target.value)}
               className="w-full p-3 border border-gray-200 rounded-xl text-sm resize-none"
             />
+          </div>
+
+          {/* ── Strava ─────────────────────────────────────────────── */}
+          <div className="border-t border-gray-100 pt-6">
+            <div className="flex items-center gap-2 mb-1">
+              <svg viewBox="0 0 24 24" className="w-5 h-5" fill="#FC4C02">
+                <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
+              </svg>
+              <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-widest">Strava</span>
+            </div>
+            {!stravaConn?.connected && (
+              <p className="text-sm text-gray-500 mb-4">
+                Connect Strava to track your sessions automatically and help your coach adjust your plan based on real data.
+              </p>
+            )}
+
+            {stravaConn?.connected ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3">
+                  {stravaConn.athlete_photo_url && (
+                    <img
+                      src={stravaConn.athlete_photo_url}
+                      alt=""
+                      className="w-9 h-9 rounded-full object-cover"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">
+                      {stravaConn.athlete_name}
+                    </p>
+                    <p className="text-xs text-green-600 font-medium">Connected</p>
+                  </div>
+                </div>
+
+                {importState === 'done' && importResult && (
+                  <p className="text-xs text-gray-500 text-center">
+                    Imported {importResult.imported} activities
+                    {importResult.skipped > 0 ? `, ${importResult.skipped} already synced` : ''}
+                  </p>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleImport}
+                    disabled={importState === 'loading'}
+                    className="flex-1 py-2.5 bg-[#FC4C02] text-white text-sm font-semibold rounded-xl disabled:opacity-60 flex items-center justify-center gap-2"
+                  >
+                    {importState === 'loading'
+                      ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Importing…</>
+                      : 'Import activities'}
+                  </button>
+                  <button
+                    onClick={handleDisconnect}
+                    className="px-4 py-2.5 border border-gray-200 text-sm text-gray-600 rounded-xl"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <a
+                href="/api/strava/auth"
+                className="flex items-center justify-center gap-2 w-full py-3 bg-[#FC4C02] text-white font-semibold rounded-xl text-sm"
+              >
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="white">
+                  <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
+                </svg>
+                Connect Strava
+              </a>
+            )}
           </div>
 
           <button

@@ -4,6 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import './index.css'
 import App from './App.tsx'
 
+// Wake Railway container immediately so it's warm by the time plan generation runs
+fetch('/api/health').catch(() => {})
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

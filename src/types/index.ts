@@ -168,3 +168,9 @@ export interface GoalCompletionRequest {
   userId: string
   goalId: string
 }
+
+export interface StravaConnection {
+  connected: boolean
+  athlete_name?: string
+  athlete_photo_url?: string
+}
