@@ -14,6 +14,8 @@ interface Props {
 interface OnboardingData {
   disciplines: Discipline[]
   phase: TrainingPhase
+  fitnessLevel: string
+  trainingDaysPerWeek: number
   eventType: string
   targetDate: string
   stats: Record<string, string>
@@ -70,10 +72,11 @@ export default function OnboardingFlow({ existingUser }: Props) {
     if (final.stats?.run_pace)       preferences.run_pace_easy          = final.stats.run_pace
     if (final.stats?.ride_weekly_km) preferences.ride_weekly_km         = parseFloat(final.stats.ride_weekly_km)
     if (final.stats?.ride_speed)     preferences.ride_speed_kmh         = parseFloat(final.stats.ride_speed)
-    if (final.stats?.swim_weekly_km)         preferences.swim_weekly_km          = parseFloat(final.stats.swim_weekly_km)
-    if (final.stats?.swim_pace_per_100m)     preferences.swim_pace_per_100m      = final.stats.swim_pace_per_100m
-    if (final.stats?.swim_session_distance_m) preferences.swim_session_distance_m = parseFloat(final.stats.swim_session_distance_m)
+    if (final.stats?.swim_weekly_km)     preferences.swim_weekly_km      = parseFloat(final.stats.swim_weekly_km)
+    if (final.stats?.swim_pace_per_100m) preferences.swim_pace_per_100m  = final.stats.swim_pace_per_100m
     if (final.stats?.training_days)  preferences.training_days          = final.stats.training_days
+    if (final.fitnessLevel)          preferences.fitness_level           = final.fitnessLevel
+    if (final.trainingDaysPerWeek)   preferences.training_days_per_week  = final.trainingDaysPerWeek
 
     // Save to Supabase (always fast — separate from Railway)
     await Promise.all([
@@ -155,7 +158,11 @@ export default function OnboardingFlow({ existingUser }: Props) {
           <Step1DisciplinesPhase
             initialDisciplines={data.disciplines ?? []}
             initialPhase={data.phase}
-            onNext={(disciplines, phase) => next({ disciplines, phase })}
+            initialFitnessLevel={data.fitnessLevel as any}
+            initialTrainingDays={data.trainingDaysPerWeek}
+            onNext={(disciplines, phase, fitnessLevel, trainingDaysPerWeek) =>
+              next({ disciplines, phase, fitnessLevel, trainingDaysPerWeek })
+            }
           />
         )}
         {step === 2 && (

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { format, differenceInDays, parseISO, subDays } from 'date-fns'
-import { Settings, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase, DEMO_USER_ID } from '../lib/supabase'
 import type { User, Session, Checkin, CoachNote, Goal } from '../types'
@@ -8,7 +8,6 @@ import TodaySession from '../components/today/TodaySession'
 import WeekStrip from '../components/today/WeekStrip'
 import LatestCoachNote from '../components/today/LatestCoachNote'
 import InlineDailyCheckIn from '../components/today/InlineDailyCheckIn'
-import ProfileDrawer from '../components/profile/ProfileDrawer'
 
 const TODAY = new Date()
 const TODAY_STR = format(TODAY, 'yyyy-MM-dd')
@@ -16,7 +15,6 @@ const YESTERDAY_STR = format(subDays(TODAY, 1), 'yyyy-MM-dd')
 
 export default function TodayPage() {
   const queryClient = useQueryClient()
-  const [showProfile, setShowProfile] = useState(false)
   const [bannerDismissed, setBannerDismissed] = useState(false)
 
   const { data: user } = useQuery({
@@ -201,12 +199,8 @@ export default function TodayPage() {
               </p>
             )}
           </div>
-          <button
-            onClick={() => setShowProfile(true)}
-            className="p-2 rounded-full hover:bg-gray-100 mt-1"
-          >
-            <Settings size={18} className="text-gray-400" />
-          </button>
+          {/* profile button lives in Layout */}
+          <div className="w-10" />
         </div>
       </div>
 
@@ -292,9 +286,6 @@ export default function TodayPage() {
         {latestNote && <LatestCoachNote note={latestNote} />}
       </div>
 
-      {showProfile && user && (
-        <ProfileDrawer user={user} onClose={() => setShowProfile(false)} />
-      )}
     </div>
   )
 }

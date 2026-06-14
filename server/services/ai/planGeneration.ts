@@ -172,38 +172,73 @@ const TYPE_TITLE: Record<string, string> = {
   base: 'Base', drill: 'Drills', brick: 'Brick', recovery: 'Recovery', speed: 'Speed',
 }
 
+// ── Volume caps per fitness level ─────────────────────────────────────────────
+
+interface VolumeCap {
+  run: number   // max weekly km
+  ride: number
+  swim: number
+  sessionNote: string
+}
+
+const VOLUME_CAPS: Record<string, VolumeCap> = {
+  beginner:     { run: 25,  ride: 80,  swim: 4,  sessionNote: 'No back-to-back hard sessions. Max 1 hard session per discipline per week.' },
+  intermediate: { run: 35,  ride: 120, swim: 6,  sessionNote: 'Max one hard session per discipline. One easy/recovery day between hard days.' },
+  advanced:     { run: 50,  ride: 160, swim: 10, sessionNote: 'Max two hard sessions per discipline. Never two hard days back-to-back.' },
+  competitive:  { run: 65,  ride: 200, swim: 15, sessionNote: 'High volume, polarised. Never two consecutive hard sessions.' },
+}
+
 // ── Prompt & expansion ────────────────────────────────────────────────────────
 
 function buildPrompt(ctx: UserContext): string {
-  const { disciplines, training_phase, preferences, coach_notes_freetext } = ctx.user
+  const { disciplines, training_phase, preferences, coach_notes_freetext, name } = ctx.user
   const goal = ctx.goal
 
-  const volume: string[] = []
-  if (disciplines.includes('run')) {
-    if (preferences.run_weekly_km)  volume.push(`run ${preferences.run_weekly_km}km/wk`)
-    if (preferences.run_pace_easy)  volume.push(`easy pace ${preferences.run_pace_easy}/km`)
-  }
-  if (disciplines.includes('ride')) {
-    if (preferences.ride_weekly_km) volume.push(`ride ${preferences.ride_weekly_km}km/wk`)
-    if (preferences.ride_speed_kmh) volume.push(`${preferences.ride_speed_kmh}km/h`)
-  }
-  if (disciplines.includes('swim')) {
-    if (preferences.swim_weekly_km) volume.push(`swim ${preferences.swim_weekly_km}km/wk`)
-    if (preferences.swim_pace_per_100m) volume.push(`swim pace ${preferences.swim_pace_per_100m}/100m`)
-  }
+  const fitnessLevel = (preferences.fitness_level as string) ?? 'intermediate'
+  const daysPerWeek  = Number(preferences.training_days_per_week) || 4
+  const caps         = VOLUME_CAPS[fitnessLevel] ?? VOLUME_CAPS.intermediate
 
-  // Ask for a varied session mix: easy, tempo, intervals, long + bricks for multi-discipline
-  const mixNote = disciplines.length > 1
-    ? 'Include a brick session (ride+run). '
-    : 'Include easy, tempo, one interval session, and long session. '
+  // Current volumes — clamp starting volumes to cap
+  const curRun  = preferences.run_weekly_km  ? Math.min(Number(preferences.run_weekly_km),  caps.run)  : Math.round(caps.run  * 0.55)
+  const curRide = preferences.ride_weekly_km ? Math.min(Number(preferences.ride_weekly_km), caps.ride) : Math.round(caps.ride * 0.55)
+  const curSwim = preferences.swim_weekly_km ? Math.min(Number(preferences.swim_weekly_km), caps.swim) : Math.round(caps.swim * 0.55)
 
-  return `Endurance athlete — plan one representative training week.
-Disciplines: ${disciplines.join('+')} | Phase: ${training_phase} | Goal: ${goal?.event_type ?? 'fitness'}
-Volume: ${volume.length ? volume.join(', ') : 'beginner'}
-Available days: ${(preferences.training_days as string | undefined) ?? 'flexible'}
-Notes: ${coach_notes_freetext ?? 'none'}
+  const goalLine = goal
+    ? `${goal.event_type ?? 'fitness goal'} on ${goal.target_date ?? 'no set date'}`
+    : 'general fitness'
 
-${mixNote}Mix session types: easy, tempo, interval, long. Hard/easy alternation — never two hard days back to back.
+  const paceLines: string[] = []
+  if (disciplines.includes('run')  && preferences.run_pace_easy)  paceLines.push(`Run easy pace: ${preferences.run_pace_easy}/km`)
+  if (disciplines.includes('ride') && preferences.ride_speed_kmh) paceLines.push(`Ride avg speed: ${preferences.ride_speed_kmh} km/h`)
+  if (disciplines.includes('swim') && preferences.swim_pace_per_100m) paceLines.push(`Swim comfortable pace: ${preferences.swim_pace_per_100m}/100m`)
+
+  const brickNote = disciplines.length > 1
+    ? '\n- Include ONE brick session (ride then run on the same day) for triathlon transition practice.'
+    : ''
+
+  return `ATHLETE PROFILE:
+Name: ${name ?? 'Athlete'}
+Fitness level: ${fitnessLevel}
+Training phase: ${training_phase}
+Disciplines: ${disciplines.join(' + ')}
+Goal: ${goalLine}
+Training days available: ${daysPerWeek} days/week
+Preferred days: ${(preferences.training_days as string | undefined) ?? 'flexible'}
+${paceLines.length ? '\nCURRENT PACES:\n' + paceLines.join('\n') : ''}
+Coach notes: ${coach_notes_freetext ?? 'none'}
+
+HARD CONSTRAINTS — NEVER EXCEED:
+- Maximum ${daysPerWeek} sessions total per week (one session per day unless brick)
+${disciplines.includes('run')  ? `- Run: week-1 volume MUST be exactly ${curRun}km. Hard cap: ${caps.run}km/week.` : ''}
+${disciplines.includes('ride') ? `- Ride: week-1 volume MUST be exactly ${curRide}km. Hard cap: ${caps.ride}km/week.` : ''}
+${disciplines.includes('swim') ? `- Swim: week-1 volume MUST be exactly ${curSwim}km. Hard cap: ${caps.swim}km/week.` : ''}
+- ${caps.sessionNote}
+- Never schedule two hard sessions (tempo/interval/speed) on consecutive days${brickNote}
+
+INSTRUCTIONS:
+Generate exactly ONE base training week with ${daysPerWeek} or fewer sessions.
+Use varied session types: easy, tempo, interval, long — appropriate for ${fitnessLevel} level.
+Volumes must be realistic for week 1 of a 12-week build.
 
 Return ONLY this JSON (no markdown, no explanation):
 {"sessions":[{"day":"Mon","disc":"run","type":"easy","km":8,"min":45},{"day":"Wed","disc":"run","type":"tempo","km":6,"min":40},{"day":"Fri","disc":"run","type":"interval","km":7,"min":50},{"day":"Sun","disc":"run","type":"long","km":14,"min":75}]}`
@@ -227,20 +262,28 @@ function expandToTwelveWeeks(baseSessions: AiSession[]): Array<{ week: number; s
 }
 
 function hardcodedSessions(ctx: UserContext): AiSession[] {
-  const { disciplines } = ctx.user
+  const { disciplines, preferences } = ctx.user
+  const fitnessLevel = (preferences.fitness_level as string) ?? 'intermediate'
+  const caps = VOLUME_CAPS[fitnessLevel] ?? VOLUME_CAPS.intermediate
+
+  // Scale fallback sessions to ~55% of the weekly cap for week 1
+  const runStart  = Math.round(caps.run  * 0.55)
+  const rideStart = Math.round(caps.ride * 0.55)
+  const swimStart = parseFloat((caps.swim * 0.55).toFixed(1))
+
   const sessions: AiSession[] = []
   if (disciplines.includes('swim')) {
-    sessions.push({ day: 'Mon', disc: 'swim', type: 'base',     km: 1.5, min: 40 })
-    sessions.push({ day: 'Thu', disc: 'swim', type: 'interval', km: 2.0, min: 45 })
+    sessions.push({ day: 'Mon', disc: 'swim', type: 'base',     km: parseFloat((swimStart * 0.45).toFixed(1)), min: 35 })
+    sessions.push({ day: 'Thu', disc: 'swim', type: 'interval', km: parseFloat((swimStart * 0.55).toFixed(1)), min: 40 })
   }
   if (disciplines.includes('ride')) {
-    sessions.push({ day: 'Tue', disc: 'ride', type: 'easy',     km: 30, min: 60 })
-    sessions.push({ day: 'Sat', disc: 'ride', type: 'long',     km: 50, min: 90 })
+    sessions.push({ day: 'Tue', disc: 'ride', type: 'easy', km: Math.round(rideStart * 0.45), min: 55 })
+    sessions.push({ day: 'Sat', disc: 'ride', type: 'long', km: Math.round(rideStart * 0.55), min: 80 })
   }
   if (disciplines.includes('run')) {
-    sessions.push({ day: 'Wed', disc: 'run',  type: 'easy',     km: 8,  min: 45 })
-    sessions.push({ day: 'Fri', disc: 'run',  type: 'tempo',    km: 6,  min: 40 })
-    sessions.push({ day: 'Sun', disc: 'run',  type: 'long',     km: 12, min: 70 })
+    sessions.push({ day: 'Wed', disc: 'run',  type: 'easy',  km: Math.round(runStart * 0.35), min: 40 })
+    sessions.push({ day: 'Fri', disc: 'run',  type: 'tempo', km: Math.round(runStart * 0.25), min: 35 })
+    sessions.push({ day: 'Sun', disc: 'run',  type: 'long',  km: Math.round(runStart * 0.40), min: 65 })
   }
   return sessions
 }

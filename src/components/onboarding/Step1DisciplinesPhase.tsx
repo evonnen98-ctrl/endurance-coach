@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import type { Discipline, TrainingPhase } from '../../types'
 
+type FitnessLevel = 'beginner' | 'intermediate' | 'advanced' | 'competitive'
+
 const DISCIPLINE_OPTIONS: { value: Discipline; label: string; emoji: string; desc: string }[] = [
   { value: 'swim', label: 'Swim', emoji: '🏊', desc: 'Pool or open water' },
   { value: 'ride', label: 'Ride', emoji: '🚴', desc: 'Road, gravel, or indoor' },
@@ -14,21 +16,36 @@ const PHASE_OPTIONS: { value: TrainingPhase; emoji: string; label: string; desc:
   { value: 'return',   emoji: '🔄', label: 'Returning from a break',   desc: 'Coming back after injury or time off' },
 ]
 
+const FITNESS_LEVELS: { value: FitnessLevel; emoji: string; label: string; desc: string }[] = [
+  { value: 'beginner',     emoji: '🌱', label: 'Beginner',     desc: 'New to endurance sport or returning after a long break' },
+  { value: 'intermediate', emoji: '📈', label: 'Intermediate', desc: 'Training consistently, completed some events' },
+  { value: 'advanced',     emoji: '💪', label: 'Advanced',     desc: 'High volume, racing regularly' },
+  { value: 'competitive',  emoji: '🏆', label: 'Competitive',  desc: 'Podium-focused, high weekly hours' },
+]
+
+const DAY_OPTIONS = [3, 4, 5, 6, 7]
+
 interface Props {
   initialDisciplines: Discipline[]
   initialPhase?: TrainingPhase
-  onNext: (disciplines: Discipline[], phase: TrainingPhase) => void
+  initialFitnessLevel?: FitnessLevel
+  initialTrainingDays?: number
+  onNext: (disciplines: Discipline[], phase: TrainingPhase, fitnessLevel: FitnessLevel, trainingDaysPerWeek: number) => void
 }
 
-export default function Step1DisciplinesPhase({ initialDisciplines, initialPhase, onNext }: Props) {
-  const [disciplines, setDisciplines] = useState<Discipline[]>(initialDisciplines)
-  const [phase, setPhase] = useState<TrainingPhase | undefined>(initialPhase)
+export default function Step1DisciplinesPhase({
+  initialDisciplines, initialPhase, initialFitnessLevel, initialTrainingDays, onNext,
+}: Props) {
+  const [disciplines, setDisciplines]       = useState<Discipline[]>(initialDisciplines)
+  const [phase, setPhase]                   = useState<TrainingPhase | undefined>(initialPhase)
+  const [fitnessLevel, setFitnessLevel]     = useState<FitnessLevel | undefined>(initialFitnessLevel)
+  const [trainingDays, setTrainingDays]     = useState<number | undefined>(initialTrainingDays)
 
   function toggle(d: Discipline) {
     setDisciplines(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d])
   }
 
-  const canContinue = disciplines.length > 0 && phase !== undefined
+  const canContinue = disciplines.length > 0 && phase !== undefined && fitnessLevel !== undefined && trainingDays !== undefined
 
   return (
     <div className="px-6 pb-8">
@@ -39,9 +56,9 @@ export default function Step1DisciplinesPhase({ initialDisciplines, initialPhase
         ))}
       </div>
 
+      {/* Disciplines */}
       <h2 className="text-xl font-semibold mb-1">Which disciplines do you train?</h2>
       <p className="text-gray-500 text-sm mb-4">Select all that apply.</p>
-
       <div className="space-y-2 mb-7">
         {DISCIPLINE_OPTIONS.map(({ value, label, emoji, desc }) => {
           const isSelected = disciplines.includes(value)
@@ -65,9 +82,9 @@ export default function Step1DisciplinesPhase({ initialDisciplines, initialPhase
         })}
       </div>
 
+      {/* Training phase */}
       <h2 className="text-xl font-semibold mb-1">What phase are you in?</h2>
       <p className="text-gray-500 text-sm mb-4">This shapes how your plan is structured.</p>
-
       <div className="space-y-2 mb-8">
         {PHASE_OPTIONS.map(({ value, emoji, label, desc }) => (
           <button
@@ -88,8 +105,50 @@ export default function Step1DisciplinesPhase({ initialDisciplines, initialPhase
         ))}
       </div>
 
+      {/* Fitness level */}
+      <h2 className="text-xl font-semibold mb-1">What's your fitness level?</h2>
+      <p className="text-gray-500 text-sm mb-4">This sets realistic volumes for your plan.</p>
+      <div className="space-y-2 mb-8">
+        {FITNESS_LEVELS.map(({ value, emoji, label, desc }) => (
+          <button
+            key={value}
+            onClick={() => setFitnessLevel(value)}
+            className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
+              fitnessLevel === value
+                ? 'border-black bg-black text-white'
+                : 'border-gray-200 bg-white text-black hover:border-gray-400'
+            }`}
+          >
+            <span className="text-2xl">{emoji}</span>
+            <div>
+              <div className="font-semibold">{label}</div>
+              <div className={`text-sm ${fitnessLevel === value ? 'text-gray-300' : 'text-gray-500'}`}>{desc}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* Days per week */}
+      <h2 className="text-xl font-semibold mb-1">How many days a week can you train?</h2>
+      <p className="text-gray-500 text-sm mb-4">Your plan will never exceed this.</p>
+      <div className="flex gap-2 mb-8">
+        {DAY_OPTIONS.map(d => (
+          <button
+            key={d}
+            onClick={() => setTrainingDays(d)}
+            className={`flex-1 py-4 rounded-xl border-2 text-lg font-bold transition-all ${
+              trainingDays === d
+                ? 'border-black bg-black text-white'
+                : 'border-gray-200 bg-white text-black hover:border-gray-400'
+            }`}
+          >
+            {d}
+          </button>
+        ))}
+      </div>
+
       <button
-        onClick={() => canContinue && onNext(disciplines, phase!)}
+        onClick={() => canContinue && onNext(disciplines, phase!, fitnessLevel!, trainingDays!)}
         disabled={!canContinue}
         className="w-full py-4 bg-black text-white font-semibold rounded-xl disabled:opacity-40"
       >
