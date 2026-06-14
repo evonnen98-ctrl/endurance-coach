@@ -66,6 +66,7 @@ export default function OnboardingFlow({ existingUser }: Props) {
 
     setBuildMessage('Connecting to your coach…')
     setBuilding(true)
+    let planGenSucceeded = false
 
     const preferences: Record<string, string | number> = {}
     if (final.stats?.run_weekly_km)      preferences.run_weekly_km         = parseFloat(final.stats.run_weekly_km)
@@ -119,26 +120,54 @@ export default function OnboardingFlow({ existingUser }: Props) {
     try {
       await new Promise<void>((resolve) => {
         const es = new EventSource(`/api/ai/generate-plan-stream?userId=${encodeURIComponent(DEMO_USER_ID)}`)
-        const maxWait = setTimeout(() => { es.close(); resolve() }, 20_000)
+        const maxWait = setTimeout(() => { es.close(); resolve() }, 25_000)
         es.onmessage = (e) => {
           try {
             const msg = JSON.parse(e.data) as { type: string; message?: string }
             if (msg.type === 'status' && msg.message) setBuildMessage(msg.message)
-            if (msg.type === 'done' || msg.type === 'error') { clearTimeout(maxWait); es.close(); resolve() }
+            if (msg.type === 'done') { planGenSucceeded = true; clearTimeout(maxWait); es.close(); resolve() }
+            if (msg.type === 'error') { console.error('[onboarding] plan gen error:', msg.message); clearTimeout(maxWait); es.close(); resolve() }
           } catch {}
         }
         es.onerror = () => { clearTimeout(maxWait); es.close(); resolve() }
       })
     } catch {}
 
+    if (!planGenSucceeded) {
+      // Retry once after a short delay (handles cold-start race conditions)
+      setBuildMessage('Finalising your plan…')
+      await new Promise(r => setTimeout(r, 2000))
+      try {
+        await new Promise<void>((resolve) => {
+          const es = new EventSource(`/api/ai/generate-plan-stream?userId=${encodeURIComponent(DEMO_USER_ID)}`)
+          const maxWait = setTimeout(() => { es.close(); resolve() }, 25_000)
+          es.onmessage = (e) => {
+            try {
+              const msg = JSON.parse(e.data) as { type: string; message?: string }
+              if (msg.type === 'status' && msg.message) setBuildMessage(msg.message)
+              if (msg.type === 'done') { planGenSucceeded = true; clearTimeout(maxWait); es.close(); resolve() }
+              if (msg.type === 'error') { clearTimeout(maxWait); es.close(); resolve() }
+            } catch {}
+          }
+          es.onerror = () => { clearTimeout(maxWait); es.close(); resolve() }
+        })
+      } catch {}
+    }
+
+    setBuildMessage('Almost there…')
     await supabase.from('users').update({ onboarding_complete: true }).eq('id', DEMO_USER_ID)
-    await queryClient.refetchQueries({ queryKey: ['user'] })
+
+    // Refetch all plan data BEFORE flipping onboarding_complete so the
+    // dashboard renders with data immediately rather than showing "No plan yet"
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['active-plan-id'] }),
+      queryClient.refetchQueries({ queryKey: ['active-plan-id'] }),
+      queryClient.refetchQueries({ queryKey: ['active-goal'] }),
+    ])
+    await Promise.all([
+      queryClient.refetchQueries({ queryKey: ['user'] }),
       queryClient.invalidateQueries({ queryKey: ['all-sessions'] }),
       queryClient.invalidateQueries({ queryKey: ['week-sessions'] }),
       queryClient.invalidateQueries({ queryKey: ['today-session'] }),
-      queryClient.invalidateQueries({ queryKey: ['active-goal'] }),
     ])
   }
 

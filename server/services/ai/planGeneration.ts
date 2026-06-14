@@ -862,20 +862,28 @@ export async function generatePlanSkeleton(
 
   console.log('[PLAN] DB insert:', Date.now())
 
-  const { data: plan } = await supabase
+  // Store (or clear) pre-plan message in preferences — avoids needing a schema change
+  const updatedPrefs = { ...(context.user.preferences as Record<string, unknown>) }
+  if (timing.userMessage) {
+    updatedPrefs.pre_plan_message = timing.userMessage
+  } else {
+    delete updatedPrefs.pre_plan_message
+  }
+  await supabase.from('users').update({ preferences: updatedPrefs }).eq('id', userId)
+
+  const { data: plan, error: planError } = await supabase
     .from('training_plans')
     .insert({
-      user_id:            userId,
-      start_date:         format(startDate, 'yyyy-MM-dd'),
-      end_date:           format(addDays(startDate, timing.planWeeks * 7 - 1), 'yyyy-MM-dd'),
-      total_weeks:        timing.planWeeks,
-      status:             'active',
-      pre_plan_message:   timing.userMessage,
+      user_id:     userId,
+      start_date:  format(startDate, 'yyyy-MM-dd'),
+      end_date:    format(addDays(startDate, timing.planWeeks * 7 - 1), 'yyyy-MM-dd'),
+      total_weeks: timing.planWeeks,
+      status:      'active',
     })
     .select()
     .single()
 
-  if (!plan) throw new Error('Failed to create training plan')
+  if (planError) throw new Error(`Failed to create training plan: ${planError.message}`)
 
   const rows = sessionsToRows(plan.id, userId, allWeeks, startDate, context.user.preferences)
   if (rows.length > 0) {

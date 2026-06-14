@@ -36,7 +36,6 @@ create table if not exists training_plans (
   end_date date not null,
   total_weeks integer not null default 12,
   status text not null default 'active',
-  pre_plan_message text,
   created_at timestamptz not null default now()
 );
 

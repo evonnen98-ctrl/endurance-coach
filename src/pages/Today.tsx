@@ -35,15 +35,15 @@ export default function TodayPage() {
     queryKey: ['active-plan-id'],
     queryFn: async () => {
       const { data } = await supabase
-        .from('training_plans').select('id, start_date, pre_plan_message').eq('user_id', DEMO_USER_ID).eq('status', 'active')
+        .from('training_plans').select('id, start_date').eq('user_id', DEMO_USER_ID).eq('status', 'active')
         .order('created_at', { ascending: false }).limit(1).maybeSingle()
       return data ?? null
     },
   })
-  const activePlanId      = activePlan?.id ?? null
-  const planStartDate     = activePlan?.start_date as string | undefined
-  const prePlanMessage    = activePlan?.pre_plan_message as string | undefined
-  const planNotStarted    = planStartDate ? planStartDate > TODAY_STR : false
+  const activePlanId   = activePlan?.id ?? null
+  const planStartDate  = activePlan?.start_date as string | undefined
+  const prePlanMessage = (user?.preferences as Record<string, unknown> | undefined)?.pre_plan_message as string | undefined
+  const planNotStarted = planStartDate ? planStartDate > TODAY_STR : false
 
   const { data: todaySession } = useQuery({
     queryKey: ['today-session', TODAY_STR, activePlanId],
