@@ -1,21 +1,23 @@
-import { useState } from 'react'
-import { format } from 'date-fns'
-import { Settings } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useEffect } from 'react'
+import { format, differenceInDays, parseISO, subDays } from 'date-fns'
+import { Settings, X } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase, DEMO_USER_ID } from '../lib/supabase'
-import type { User, Session, Checkin, CoachNote, Goal, TrainingPlan } from '../types'
+import type { User, Session, Checkin, CoachNote, Goal } from '../types'
 import TodaySession from '../components/today/TodaySession'
 import WeekStrip from '../components/today/WeekStrip'
 import LatestCoachNote from '../components/today/LatestCoachNote'
-import CheckInModal from '../components/modals/CheckInModal'
+import InlineDailyCheckIn from '../components/today/InlineDailyCheckIn'
 import ProfileDrawer from '../components/profile/ProfileDrawer'
 
 const TODAY = new Date()
 const TODAY_STR = format(TODAY, 'yyyy-MM-dd')
+const YESTERDAY_STR = format(subDays(TODAY, 1), 'yyyy-MM-dd')
 
 export default function TodayPage() {
-  const [showCheckin, setShowCheckin] = useState(false)
+  const queryClient = useQueryClient()
   const [showProfile, setShowProfile] = useState(false)
+  const [bannerDismissed, setBannerDismissed] = useState(false)
 
   const { data: user } = useQuery({
     queryKey: ['user'],
@@ -60,7 +62,7 @@ export default function TodayPage() {
     queryFn: async () => {
       const now = new Date()
       const dayOfWeek = now.getDay()
-      const offset = (dayOfWeek + 6) % 7 // days since Monday
+      const offset = (dayOfWeek + 6) % 7
       const mon = new Date(now)
       mon.setDate(now.getDate() - offset)
       const sun = new Date(mon)
@@ -93,6 +95,20 @@ export default function TodayPage() {
     },
   })
 
+  const { data: lastCheckin } = useQuery({
+    queryKey: ['last-checkin'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('checkins')
+        .select('*')
+        .eq('user_id', DEMO_USER_ID)
+        .order('checkin_date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      return data as Checkin | null
+    },
+  })
+
   const { data: latestNote } = useQuery({
     queryKey: ['latest-coach-note'],
     queryFn: async () => {
@@ -107,11 +123,64 @@ export default function TodayPage() {
     },
   })
 
-  const todayDate = new Date()
-  const dayName = format(todayDate, 'EEEE d MMMM').toUpperCase()
-  const phaseEmoji = user?.training_phase === 'race' ? '🎯' : user?.training_phase === 'build' ? '📈' : '💪'
+  // Mark yesterday's planned sessions as missed
+  useEffect(() => {
+    async function markMissed() {
+      const { data: yesterdayPlanned } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('user_id', DEMO_USER_ID)
+        .eq('scheduled_date', YESTERDAY_STR)
+        .eq('status', 'planned')
+      if (yesterdayPlanned?.length) {
+        const ids = yesterdayPlanned.map(s => s.id)
+        await supabase.from('sessions').update({ status: 'missed' }).in('id', ids)
+        await queryClient.invalidateQueries({ queryKey: ['week-sessions'] })
+      }
+    }
+    markMissed()
+  }, [])
 
   const hasCheckedInToday = !!todayCheckin
+
+  // Days since last check-in (not counting today)
+  const daysSinceCheckin = lastCheckin && !hasCheckedInToday
+    ? differenceInDays(TODAY, parseISO(lastCheckin.checkin_date))
+    : 0
+
+  const showNudge = !hasCheckedInToday && daysSinceCheckin >= 3
+
+  // Race countdown
+  const daysUntilRace = goal?.target_date
+    ? differenceInDays(parseISO(goal.target_date), TODAY)
+    : null
+
+  const raceCountdownColor = daysUntilRace === null
+    ? ''
+    : daysUntilRace > 60
+    ? 'text-green-600'
+    : daysUntilRace > 30
+    ? 'text-amber-500'
+    : 'text-red-500'
+
+  // Plan adjustment banner from user preferences
+  const adjustmentBanner = !bannerDismissed
+    ? ((user?.preferences as Record<string, unknown>)?.plan_adjustment_banner as string | undefined)
+    : undefined
+
+  const dayName = format(TODAY, 'EEEE d MMMM').toUpperCase()
+  const phaseEmoji = user?.training_phase === 'race' ? '🎯' : user?.training_phase === 'build' ? '📈' : '💪'
+
+  // Goal passed?
+  const goalPassed = daysUntilRace !== null && daysUntilRace < 0
+
+  async function dismissBanner() {
+    setBannerDismissed(true)
+    const prefs = (user?.preferences as Record<string, unknown>) ?? {}
+    const { plan_adjustment_banner: _removed, ...rest } = prefs
+    await supabase.from('users').update({ preferences: rest }).eq('id', DEMO_USER_ID)
+    await queryClient.invalidateQueries({ queryKey: ['user'] })
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -121,57 +190,107 @@ export default function TodayPage() {
           <div>
             <div className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-1">{dayName}</div>
             <h1 className="text-3xl font-bold">Morning, {user?.name ?? 'Coach'}.</h1>
-            {goal && (
+            {goal && !goalPassed && (
               <p className="text-sm text-gray-500 mt-1">
-                {phaseEmoji} Training for a race &middot; {goal.event_type}
+                {phaseEmoji} {goal.event_type}
+                {daysUntilRace !== null && (
+                  <span className={`ml-2 font-semibold ${raceCountdownColor}`}>
+                    · {daysUntilRace}d to go
+                  </span>
+                )}
               </p>
             )}
           </div>
-          <div className="flex gap-2 mt-1">
-            <button
-              onClick={() => setShowProfile(true)}
-              className="p-2 rounded-full hover:bg-gray-100"
-            >
-              <Settings size={18} className="text-gray-400" />
-            </button>
-          </div>
+          <button
+            onClick={() => setShowProfile(true)}
+            className="p-2 rounded-full hover:bg-gray-100 mt-1"
+          >
+            <Settings size={18} className="text-gray-400" />
+          </button>
         </div>
       </div>
 
-      <div className="space-y-6 pt-5 pb-6">
+      <div className="space-y-4 pt-4 pb-6">
+        {/* Plan adjustment banner (#4) */}
+        {adjustmentBanner && (
+          <div className="mx-4 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-start gap-3">
+            <span className="text-amber-500 mt-0.5">⚡</span>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber-800">Your coach updated your plan</p>
+              <p className="text-sm text-amber-700 mt-0.5">{adjustmentBanner}</p>
+            </div>
+            <button onClick={dismissBanner} className="text-amber-400 hover:text-amber-600">
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
+        {/* Post-race framing (#14) */}
+        {goalPassed && (
+          <div className="mx-4 bg-green-50 border border-green-100 rounded-2xl p-4">
+            <p className="font-semibold text-green-800 text-sm">Race complete 🏁</p>
+            <p className="text-sm text-green-700 mt-1">
+              Your {goal?.event_type} date has passed. This week is about recovery — easy sessions only.
+              Ready to set your next goal?
+            </p>
+          </div>
+        )}
+
+        {/* Hero check-in (#5) — shown above everything when no check-in today */}
+        {!hasCheckedInToday && !showNudge && (
+          <InlineDailyCheckIn
+            name={user?.name ?? 'there'}
+            todaySession={todaySession ?? undefined}
+          />
+        )}
+
+        {/* Nudge for 3+ day gap (#5) */}
+        {showNudge && (
+          <InlineDailyCheckIn
+            name={user?.name ?? 'there'}
+            todaySession={todaySession ?? undefined}
+            nudgeOnly
+          />
+        )}
+
+        {/* Checked-in indicator + today's session (#5) */}
+        {hasCheckedInToday && todaySession && (
+          <div className="mx-4 flex items-center gap-2 text-xs text-gray-400 font-medium">
+            <span className="w-4 h-4 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-[10px]">✓</span>
+            Checked in today
+          </div>
+        )}
+
         {/* Today's session */}
         {todaySession ? (
-          <TodaySession session={todaySession} checkin={todayCheckin ?? undefined} />
-        ) : (
+          <TodaySession
+            session={todaySession}
+            checkin={todayCheckin ?? undefined}
+            weekSessions={weekSessions}
+          />
+        ) : hasCheckedInToday ? (
           <div className="mx-4 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center">
-            <p className="text-gray-400 text-sm">No session scheduled for today.</p>
+            <p className="text-gray-400 text-sm">No session scheduled today — rest up.</p>
+          </div>
+        ) : null}
+
+        {/* Race countdown card (#10) */}
+        {daysUntilRace !== null && daysUntilRace >= 0 && goal?.event_type && (
+          <div className="mx-4 bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex items-center gap-3">
+            <span className="text-2xl">🏁</span>
+            <div>
+              <p className={`text-lg font-bold ${raceCountdownColor}`}>{daysUntilRace} days</p>
+              <p className="text-xs text-gray-500">until your {goal.event_type}</p>
+            </div>
           </div>
         )}
 
         {/* Week strip */}
-        <WeekStrip sessions={weekSessions} today={new Date()} />
+        <WeekStrip sessions={weekSessions} today={TODAY} />
 
         {/* Coach notes */}
         {latestNote && <LatestCoachNote note={latestNote} />}
       </div>
-
-      {/* Check-in FAB */}
-      {!hasCheckedInToday && (
-        <button
-          onClick={() => setShowCheckin(true)}
-          className="fixed bottom-24 right-4 bg-black text-white px-4 py-3 rounded-full shadow-lg flex items-center gap-2 text-sm font-semibold z-30"
-        >
-          <span className="text-base">👋</span>
-          Check in
-        </button>
-      )}
-
-      {showCheckin && (
-        <CheckInModal
-          todaySession={todaySession ?? undefined}
-          onClose={() => setShowCheckin(false)}
-        />
-      )}
 
       {showProfile && user && (
         <ProfileDrawer user={user} onClose={() => setShowProfile(false)} />

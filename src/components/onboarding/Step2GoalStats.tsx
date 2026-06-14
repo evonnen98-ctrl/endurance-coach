@@ -188,26 +188,25 @@ export default function Step2GoalStats({ disciplines, phase, onNext, onBack }: P
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
-                    Weekly km
+                    100m pace (min:sec)
                   </label>
                   <input
-                    type="number"
-                    step="0.1"
-                    placeholder="4"
-                    value={stats.swim_weekly_km ?? ''}
-                    onChange={e => set('swim_weekly_km', e.target.value)}
+                    type="text"
+                    placeholder="1:45"
+                    value={stats.swim_pace_per_100m ?? ''}
+                    onChange={e => set('swim_pace_per_100m', e.target.value)}
                     className="w-full p-3 bg-white border border-gray-200 rounded-lg text-base"
                   />
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
-                    Sessions/week
+                    Typical session (m)
                   </label>
                   <input
                     type="number"
-                    placeholder="3"
-                    value={stats.swim_sessions ?? ''}
-                    onChange={e => set('swim_sessions', e.target.value)}
+                    placeholder="2000"
+                    value={stats.swim_session_distance_m ?? ''}
+                    onChange={e => set('swim_session_distance_m', e.target.value)}
                     className="w-full p-3 bg-white border border-gray-200 rounded-lg text-base"
                   />
                 </div>

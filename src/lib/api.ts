@@ -41,6 +41,9 @@ export const api = {
   goalCompletion: (params: { userId: string; goalId: string }) =>
     post<{ success: boolean }>('/ai/goal-completion', params),
 
+  autoAdjust: (userId: string) =>
+    post<{ adjusted: boolean; reason?: string }>('/ai/auto-adjust', { userId }),
+
   stravaStatus: () =>
     fetch('/api/strava/status').then(r => r.json()) as Promise<import('../types').StravaConnection>,
 

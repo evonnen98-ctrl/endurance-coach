@@ -1,6 +1,6 @@
 export type Discipline = 'swim' | 'ride' | 'run' | 'rest' | 'brick'
 export type TrainingPhase = 'race' | 'build' | 'maintain' | 'return'
-export type SessionStatus = 'planned' | 'complete' | 'modified' | 'skipped'
+export type SessionStatus = 'planned' | 'complete' | 'modified' | 'skipped' | 'missed'
 export type GoalStatus = 'active' | 'complete'
 export type FeelingScore = 1 | 2 | 3 | 4 | 5
 export type TrainingStyle = 'conservative' | 'moderate' | 'aggressive'

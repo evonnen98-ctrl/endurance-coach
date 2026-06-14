@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { UserContext } from '../userContext.js'
 import { supabase } from '../../lib/supabase.js'
+import { COACH_SYSTEM_PROMPT } from './coachingPrompt.js'
 
 const client = new Anthropic()
 
@@ -15,31 +16,32 @@ export async function generateGoalCompletion(
     .eq('id', goalId)
     .single()
 
-  const prompt = `You are an endurance coach writing a post-race/goal completion message for your athlete.
+  const prompt = `Write a post-race/goal completion message for this athlete.
 
 ATHLETE: ${context.user.name}
 GOAL COMPLETED: ${goal?.event_type ?? 'race'}
 TRAINING BLOCK: ${context.current_week} weeks
-TRAINING OVERVIEW: ${context.recent_workouts.slice(0, 8).map(w => `${w.date}: ${w.discipline} — RPE ${w.rpe ?? '?'}`).join(', ')}
+RECENT WORKOUTS: ${context.recent_workouts.slice(0, 8).map(w => `${w.date}: ${w.discipline} RPE ${w.rpe ?? '?'}`).join(', ')}
 
-Write a warm, specific post-race message that:
-1. Acknowledges the achievement authentically
-2. Briefly summarises what they built during the block (1-2 specifics)
-3. Recommends a recovery week approach
-4. Ends with an encouraging prompt to set their next goal
+Write a message that:
+1. Acknowledges the achievement specifically (not generically)
+2. References 1-2 specifics from the training data
+3. Recommends a concrete recovery week approach
+4. Ends with a prompt toward the next goal
 
-Keep it under 200 words. Write directly to the athlete (use "you").
+Under 200 words. Write directly to the athlete.
 
 Return JSON:
 {
-  "post_race_note": "Your full message here",
-  "recovery_week_guidance": "Short 2-sentence guidance for this week",
-  "next_goal_prompt": "One question to get them thinking about what's next"
+  "post_race_note": "Your full message",
+  "recovery_week_guidance": "2-sentence recovery guidance for this week",
+  "next_goal_prompt": "One specific question to get them thinking about what's next"
 }`
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 600,
+    system: COACH_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: prompt }],
   })
 
@@ -49,7 +51,6 @@ Return JSON:
 
   const result = JSON.parse(jsonMatch[0])
 
-  // Mark goal complete
   await supabase.from('goals').update({ status: 'complete' }).eq('id', goalId)
 
   return result

@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { UserContext } from '../userContext.js'
 import { supabase } from '../../lib/supabase.js'
+import { COACH_SYSTEM_PROMPT } from './coachingPrompt.js'
 
 const client = new Anthropic()
 
@@ -19,13 +20,14 @@ export async function generateCheckinResponse(
     todaySession = data
   }
 
-  const prompt = `You are an elite endurance coach. An athlete has just submitted their morning check-in.
+  const prompt = `An athlete has submitted their morning check-in.
 
 ATHLETE: ${context.user.name}
 TODAY'S FEELING: ${FEELING_LABELS[feeling]} (${feeling}/5)
 SORENESS/ISSUES: ${soreness_notes || 'none reported'}
-
-TODAY'S PLANNED SESSION: ${todaySession ? `${todaySession.title} — ${todaySession.description ?? ''} (${todaySession.duration_minutes} min, ${todaySession.effort_zone ?? 'unknown effort'})` : 'rest day'}
+TODAY'S PLANNED SESSION: ${todaySession
+  ? `${todaySession.title} — ${todaySession.description ?? ''} (${todaySession.duration_minutes}min, ${todaySession.effort_zone ?? 'unknown effort'})`
+  : 'rest day'}
 
 RECENT CONTEXT:
 - Week ${context.current_week} of training
@@ -33,24 +35,22 @@ RECENT CONTEXT:
 - Last 3 check-ins: ${context.recent_checkins.slice(0, 3).map(c => `${c.date}: ${c.feeling_label}${c.soreness_notes ? ` (${c.soreness_notes})` : ''}`).join(' | ')}
 - Injury flags: ${context.injury_flags ? 'YES — be conservative' : 'none'}
 
-Respond as a direct, warm coach. Be specific to what they've told you.
-
-If feeling is 4-5 (good/great) with no issues: confirm session as planned in 1-2 sentences.
-If feeling is 3 (okay) with soreness: acknowledge it, suggest minor adjustment or just monitor, keep session.
-If feeling is 1-2 (poor/terrible): suggest a meaningful modification (reduce intensity, shorten session, or swap to easy alternative) with a clear reason.
+Rules:
+- Feeling 4-5 with no issues: confirm today's session in 1-2 sentences.
+- Feeling 3 with soreness: acknowledge it, suggest monitoring or minor mod, keep session.
+- Feeling 1-2: suggest a real modification (reduce intensity, shorten, or swap to easy alternative) and explain why.
 
 Return JSON:
 {
   "coach_response": "Your 1-2 sentence response here",
   "plan_adjusted": false,
   "adjustment_details": null
-}
-
-If you recommend a modification, set plan_adjusted to true and describe it in adjustment_details.`
+}`
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 500,
+    system: COACH_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: prompt }],
   })
 

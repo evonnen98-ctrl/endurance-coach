@@ -6,6 +6,7 @@ import { generatePostWorkoutResponse } from '../services/ai/postWorkoutResponse.
 import { generateWeeklyCoachNote } from '../services/ai/weeklyCoachNote.js'
 import { adjustPlan } from '../services/ai/planAdjustment.js'
 import { generateGoalCompletion } from '../services/ai/goalCompletion.js'
+import { supabase } from '../lib/supabase.js'
 
 const router = Router()
 
@@ -22,7 +23,6 @@ router.post('/generate-plan', async (req, res) => {
   }
 })
 
-// SSE endpoint: streams progress events during plan generation
 router.get('/generate-plan-stream', async (req, res) => {
   const userId = req.query.userId as string
   if (!userId) { res.status(400).json({ error: 'userId required' }); return }
@@ -36,7 +36,6 @@ router.get('/generate-plan-stream', async (req, res) => {
   const t0 = Date.now()
   const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`)
 
-  // Hard 20s outer timeout — sends done and closes regardless
   const hardTimeout = setTimeout(() => {
     console.warn(`[ai] hard timeout hit at ${Date.now() - t0}ms`)
     send({ type: 'done' })
@@ -121,6 +120,61 @@ router.post('/adjust-plan', async (req, res) => {
   } catch (err: any) {
     console.error('adjust-plan error:', err)
     res.status(500).json({ error: err.message ?? 'Plan adjustment failed' })
+  }
+})
+
+// Auto-adjust: checks triggers and adjusts if conditions are met
+router.post('/auto-adjust', async (req, res) => {
+  try {
+    const { userId } = req.body
+    if (!userId) return res.status(400).json({ error: 'userId required' })
+
+    const [logsRes, checkinsRes] = await Promise.all([
+      supabase
+        .from('workout_logs')
+        .select('rpe, injury_flag, logged_at')
+        .eq('user_id', userId)
+        .order('logged_at', { ascending: false })
+        .limit(5),
+      supabase
+        .from('checkins')
+        .select('feeling, checkin_date')
+        .eq('user_id', userId)
+        .order('checkin_date', { ascending: false })
+        .limit(4),
+    ])
+
+    const logs     = logsRes.data ?? []
+    const checkins = checkinsRes.data ?? []
+
+    const consecutiveHighRPE   = logs.length >= 2 && (logs[0].rpe ?? 0) > 8 && (logs[1].rpe ?? 0) > 8
+    const injuryFlagged        = logs.some((l: any) => l.injury_flag)
+    const consecutiveLowFeeling = checkins.length >= 2 && (checkins[0].feeling ?? 5) <= 2 && (checkins[1].feeling ?? 5) <= 2
+
+    if (!consecutiveHighRPE && !injuryFlagged && !consecutiveLowFeeling) {
+      return res.json({ adjusted: false })
+    }
+
+    const reason = injuryFlagged
+      ? 'Injury flagged — reduced intensity on upcoming sessions'
+      : consecutiveHighRPE
+      ? 'Two consecutive high-RPE sessions — eased upcoming load'
+      : 'Two low-feeling days in a row — recovery block applied'
+
+    const context = await buildUserContext(userId)
+    await adjustPlan(userId, context)
+
+    // Store banner in user preferences
+    const { data: user } = await supabase.from('users').select('preferences').eq('id', userId).single()
+    const prefs = (user?.preferences as Record<string, unknown>) ?? {}
+    await supabase.from('users').update({
+      preferences: { ...prefs, plan_adjustment_banner: reason }
+    }).eq('id', userId)
+
+    res.json({ adjusted: true, reason })
+  } catch (err: any) {
+    console.error('auto-adjust error:', err)
+    res.status(500).json({ error: err.message ?? 'Auto-adjust failed' })
   }
 })
 

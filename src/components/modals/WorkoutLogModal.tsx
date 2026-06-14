@@ -10,6 +10,8 @@ interface Props {
   onClose: () => void
 }
 
+const STARS = [1, 2, 3, 4, 5]
+
 export default function WorkoutLogModal({ session, onClose }: Props) {
   const queryClient = useQueryClient()
   const [distance, setDistance] = useState(session.distance_km?.toString() ?? '')
@@ -23,8 +25,24 @@ export default function WorkoutLogModal({ session, onClose }: Props) {
   const [showOptional, setShowOptional] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [coachResponse, setCoachResponse] = useState('')
+  const [logId, setLogId] = useState<string | null>(null)
+  const [rating, setRating] = useState<number | null>(null)
+  const [ratingSaved, setRatingSaved] = useState(false)
 
   const isRest = session.discipline === 'rest'
+
+  async function saveRating(stars: number) {
+    if (!logId) return
+    setRating(stars)
+    const { data: existing } = await supabase
+      .from('workout_logs')
+      .select('raw_data')
+      .eq('id', logId)
+      .single()
+    const raw = (existing?.raw_data as Record<string, unknown>) ?? {}
+    await supabase.from('workout_logs').update({ raw_data: { ...raw, rating: stars } }).eq('id', logId)
+    setRatingSaved(true)
+  }
 
   async function submit() {
     setSubmitting(true)
@@ -32,35 +50,33 @@ export default function WorkoutLogModal({ session, onClose }: Props) {
     const { data: log } = await supabase
       .from('workout_logs')
       .insert({
-        session_id: session.id,
-        user_id: DEMO_USER_ID,
-        actual_distance_km: distance ? parseFloat(distance) : null,
+        session_id:             session.id,
+        user_id:                DEMO_USER_ID,
+        actual_distance_km:     distance ? parseFloat(distance) : null,
         actual_duration_minutes: duration ? parseInt(duration) : null,
-        actual_pace: pace || null,
+        actual_pace:            pace || null,
         rpe,
-        user_note: note || null,
-        average_hr: hr ? parseInt(hr) : null,
-        injury_flag: injuryFlag,
-        conditions_notes: conditions || null,
-        source: 'manual',
+        user_note:              note || null,
+        average_hr:             hr ? parseInt(hr) : null,
+        injury_flag:            injuryFlag,
+        conditions_notes:       conditions || null,
+        source:                 'manual',
       })
       .select()
       .single()
 
-    await supabase
-      .from('sessions')
-      .update({ status: 'complete' })
-      .eq('id', session.id)
+    await supabase.from('sessions').update({ status: 'complete' }).eq('id', session.id)
 
     if (log) {
+      setLogId(log.id)
       try {
         const res = await api.postWorkout({
-          userId: DEMO_USER_ID,
-          workoutLogId: log.id,
-          sessionId: session.id,
+          userId:                 DEMO_USER_ID,
+          workoutLogId:           log.id,
+          sessionId:              session.id,
           rpe,
-          user_note: note || undefined,
-          actual_distance_km: distance ? parseFloat(distance) : undefined,
+          user_note:              note || undefined,
+          actual_distance_km:     distance ? parseFloat(distance) : undefined,
           actual_duration_minutes: duration ? parseInt(duration) : undefined,
         })
         setCoachResponse(res.coach_response)
@@ -69,8 +85,15 @@ export default function WorkoutLogModal({ session, onClose }: Props) {
           .update({ coach_response: res.coach_response })
           .eq('id', log.id)
       } catch {
-        setCoachResponse("Great work completing that session. I'll factor this into your upcoming sessions.")
+        setCoachResponse("Good work completing that session. I'll factor this into your upcoming sessions.")
       }
+
+      // Trigger auto-adjust in background (#4)
+      api.autoAdjust(DEMO_USER_ID).then(result => {
+        if (result.adjusted) {
+          queryClient.invalidateQueries({ queryKey: ['user'] })
+        }
+      }).catch(() => {})
     }
 
     await queryClient.invalidateQueries({ queryKey: ['today-session'] })
@@ -85,7 +108,6 @@ export default function WorkoutLogModal({ session, onClose }: Props) {
         className="bg-white w-full max-w-lg rounded-t-3xl max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
-        {/* Handle */}
         <div className="flex justify-center pt-3 pb-1">
           <div className="w-10 h-1 bg-gray-200 rounded-full" />
         </div>
@@ -96,11 +118,33 @@ export default function WorkoutLogModal({ session, onClose }: Props) {
         </div>
 
         {coachResponse ? (
-          <div className="px-5 pb-8">
-            <div className="bg-gray-50 rounded-2xl p-4 mb-5">
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Coach response</div>
+          <div className="px-5 pb-8 space-y-4">
+            <div className="bg-gray-50 rounded-2xl p-4">
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Coach</div>
               <p className="text-sm text-gray-800 leading-relaxed">{coachResponse}</p>
             </div>
+
+            {/* Session rating (#12) */}
+            <div>
+              <p className="text-sm font-semibold text-gray-700 mb-2">Rate this session</p>
+              <div className="flex gap-2">
+                {STARS.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => saveRating(s)}
+                    className={`flex-1 py-3 text-2xl rounded-xl border-2 transition-all ${
+                      rating !== null && s <= rating
+                        ? 'border-yellow-400 bg-yellow-50'
+                        : 'border-gray-100 bg-gray-50'
+                    }`}
+                  >
+                    {rating !== null && s <= rating ? '★' : '☆'}
+                  </button>
+                ))}
+              </div>
+              {ratingSaved && <p className="text-xs text-gray-400 mt-1.5 text-center">Rating saved</p>}
+            </div>
+
             <button
               onClick={onClose}
               className="w-full py-4 bg-black text-white font-semibold rounded-xl"
@@ -110,7 +154,6 @@ export default function WorkoutLogModal({ session, onClose }: Props) {
           </div>
         ) : (
           <div className="px-5 pb-8 space-y-4">
-            {/* Pre-fill info */}
             <div className="bg-gray-50 rounded-xl px-3 py-2 text-xs text-gray-500">
               Pre-filled from: <span className="font-medium text-gray-700">{session.title}</span>
             </div>
@@ -156,7 +199,7 @@ export default function WorkoutLogModal({ session, onClose }: Props) {
               </>
             )}
 
-            {/* RPE slider */}
+            {/* RPE */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-widest">Effort (RPE)</label>
@@ -188,7 +231,6 @@ export default function WorkoutLogModal({ session, onClose }: Props) {
               />
             </div>
 
-            {/* Optional fields */}
             <button
               className="text-sm text-gray-400 underline"
               onClick={() => setShowOptional(s => !s)}

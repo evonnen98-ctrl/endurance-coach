@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { UserContext } from '../userContext.js'
 import { supabase } from '../../lib/supabase.js'
+import { COACH_SYSTEM_PROMPT } from './coachingPrompt.js'
 
 const client = new Anthropic()
 
@@ -26,29 +27,30 @@ export async function generatePostWorkoutResponse(
     return `${diff > 0 ? '+' : ''}${diff.toFixed(0)}% vs planned distance`
   })()
 
-  const prompt = `You are an elite endurance coach responding to a completed workout. Keep your response to 2-3 sentences maximum. Be direct, specific, and avoid generic praise.
+  const prompt = `Athlete just completed a workout. Respond in 2-3 sentences. Be specific to the data — no generic praise.
 
 ATHLETE: ${context.user.name}
 COMPLETED: ${plannedSession?.title ?? 'workout'}
-PLANNED: ${plannedSession?.distance_km ?? '?'} km / ${plannedSession?.duration_minutes ?? '?'} min / ${plannedSession?.effort_zone ?? '?'}
-ACTUAL: ${actual_distance_km ?? '?'} km / ${actual_duration_minutes ?? '?'} min
-RPE: ${rpe}/10
+PLANNED: ${plannedSession?.distance_km ?? '?'}km / ${plannedSession?.duration_minutes ?? '?'}min / ${plannedSession?.effort_zone ?? '?'} / ${plannedSession?.description ?? ''}
+ACTUAL: ${actual_distance_km ?? '?'}km / ${actual_duration_minutes ?? '?'}min
+RPE: ${rpe}/10 (planned effort: ${plannedSession?.effort_zone ?? 'unknown'})
 ATHLETE'S NOTE: "${user_note || 'no note'}"
 DEVIATION: ${deviation ?? 'on target'}
-WEEK: ${context.current_week} — Goal: ${context.goal?.event_type ?? 'fitness'} in ${context.goal?.days_until_event ?? '?'} days
+WEEK: ${context.current_week} of 12 — ${context.goal?.event_type ?? 'fitness'} in ${context.goal?.days_until_event ?? '?'} days
 
 Instructions:
-- If RPE matches the planned effort zone: acknowledge the execution quality briefly
-- If RPE was high for a Z2 session: note the extra effort and what it means for recovery
-- If distance was significantly off: comment on that specifically
-- If athlete's note mentions something specific: respond to it directly
-- End with one forward-looking sentence about what comes next or what to watch for
+- If RPE matches planned effort zone: acknowledge execution quality briefly.
+- If RPE > 7 on a Zone 2 session: call it out specifically — reference the zone and RPE number.
+- If distance significantly off: comment on it directly.
+- If athlete's note mentions something specific: respond to it.
+- End with one forward-looking sentence about what's next or what to monitor.
 
 Return JSON: { "coach_response": "your 2-3 sentence response" }`
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 300,
+    system: COACH_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: prompt }],
   })
 
