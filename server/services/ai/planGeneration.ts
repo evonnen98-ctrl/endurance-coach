@@ -247,31 +247,160 @@ function getCapsForGoal(level: FitnessLevel, goalRaw: string): VolumeCap {
   return caps[goal]?.[level] ?? fallback[level] ?? fallback.intermediate
 }
 
-// ── Taper config by goal type ─────────────────────────────────────────────────
+// ── Peak multiplier by goal ───────────────────────────────────────────────────
 
-interface TaperConfig {
-  multipliers: readonly number[]
-  peakMultiplier: number
+function peakMultiplierForGoal(goalRaw: string): number {
+  const g = detectGoalType(goalRaw)
+  return (g === 'marathon' || g === '70.3' || g === 'ironman') ? 1.30 : 1.35
 }
 
-function getTaperConfig(goalRaw: string): TaperConfig {
-  const goal = detectGoalType(goalRaw)
-  if (goal === 'marathon' || goal === '70.3' || goal === 'ironman') {
+// ── Race-adaptive plan timing ─────────────────────────────────────────────────
+
+type PlanPhase = 'base_block' | 'full' | 'compressed' | 'race_prep' | 'race_week'
+
+interface PlanTiming {
+  planWeeks:      number
+  startDate:      Date
+  phase:          PlanPhase
+  userMessage:    string | null
+  weeksUntilRace: number | null
+}
+
+function nextMonday(d: Date): Date {
+  const day = d.getDay()
+  if (day === 1) return new Date(d)
+  const offset = day === 0 ? 1 : 8 - day
+  const m = new Date(d)
+  m.setDate(d.getDate() + offset)
+  return m
+}
+
+function calculatePlanTiming(
+  targetDate:           string | undefined | null,
+  preferredStartDate:   string | undefined | null,
+): PlanTiming {
+  const today        = new Date()
+  const defaultStart = preferredStartDate
+    ? nextMonday(new Date(preferredStartDate + 'T12:00:00'))
+    : nextMonday(today)
+
+  if (!targetDate) {
+    return { planWeeks: 12, startDate: defaultStart, phase: 'base_block', userMessage: null, weeksUntilRace: null }
+  }
+
+  const raceDate       = new Date(targetDate + 'T12:00:00')
+  const msPerWeek      = 7 * 24 * 60 * 60 * 1000
+  const weeksUntilRace = Math.floor((raceDate.getTime() - today.getTime()) / msPerWeek)
+
+  if (weeksUntilRace > 16) {
+    const blockStart = new Date(raceDate)
+    blockStart.setDate(raceDate.getDate() - 84)
+    const startMon = nextMonday(blockStart)
     return {
-      multipliers:    [1.00, 1.05, 1.10, 0.85, 1.15, 1.20, 1.25, 0.90, 1.30, 0.85, 0.70, 0.50],
-      peakMultiplier: 1.30,
+      planWeeks:      12,
+      startDate:      startMon,
+      phase:          'full',
+      userMessage:    `Your race is ${weeksUntilRace} weeks away. We'll start your peak 12-week block on ${format(startMon, 'd MMM yyyy')}. Keep building your base until then.`,
+      weeksUntilRace,
     }
   }
-  if (goal === 'half_marathon' || goal === 'olympic_tri' || goal === 'sprint_tri') {
+  if (weeksUntilRace >= 10) {
+    return { planWeeks: weeksUntilRace, startDate: defaultStart, phase: 'full',       userMessage: null, weeksUntilRace }
+  }
+  if (weeksUntilRace >= 6) {
     return {
-      multipliers:    [1.00, 1.05, 1.10, 0.85, 1.15, 1.20, 1.25, 0.90, 1.30, 1.35, 0.80, 0.55],
-      peakMultiplier: 1.35,
+      planWeeks:      weeksUntilRace,
+      startDate:      defaultStart,
+      phase:          'compressed',
+      userMessage:    `With ${weeksUntilRace} weeks to race day, we'll focus on race-specific preparation and skip the base phase.`,
+      weeksUntilRace,
+    }
+  }
+  if (weeksUntilRace >= 3) {
+    return {
+      planWeeks:      weeksUntilRace,
+      startDate:      defaultStart,
+      phase:          'race_prep',
+      userMessage:    `Race day is close. This plan focuses on arriving fresh and confident — easy sessions, some race pace work, and smart tapering.`,
+      weeksUntilRace,
     }
   }
   return {
-    multipliers:    [1.00, 1.05, 1.10, 0.85, 1.15, 1.20, 1.25, 0.90, 1.30, 1.35, 1.15, 0.65],
-    peakMultiplier: 1.35,
+    planWeeks:      Math.max(1, weeksUntilRace),
+    startDate:      defaultStart,
+    phase:          'race_week',
+    userMessage:    `You're in race week territory. Focus on rest, nutrition, and race-day prep. Keep sessions short and easy.`,
+    weeksUntilRace,
   }
+}
+
+// ── Volume multipliers scaled to plan length ──────────────────────────────────
+
+function buildPlanMultipliers(
+  planWeeks: number,
+  goalType:  string,
+  phase:     PlanPhase,
+): { multipliers: number[]; peakMultiplier: number } {
+  const goal       = detectGoalType(goalType)
+  const isLong     = goal === 'marathon' || goal === '70.3' || goal === 'ironman'
+  const peakMult   = isLong ? 1.30 : 1.35
+
+  // Race week (1-2 weeks): flat easy
+  if (planWeeks <= 2 || phase === 'race_week') {
+    const mults = planWeeks <= 1 ? [0.55] : [0.75, 0.55]
+    return { multipliers: mults.slice(0, planWeeks), peakMultiplier: peakMult }
+  }
+
+  // Race prep (3-5 weeks): maintain + taper, no real build
+  if (phase === 'race_prep' || planWeeks <= 5) {
+    const n = Math.min(planWeeks, 5)
+    const patterns: Record<number, number[]> = {
+      3: [0.90, 0.80, 0.55],
+      4: [0.95, 0.90, 0.80, 0.55],
+      5: [1.00, 0.95, 0.90, 0.80, 0.55],
+    }
+    return { multipliers: patterns[n] ?? [0.90, 0.80, 0.55], peakMultiplier: peakMult }
+  }
+
+  // Compressed (6-9 weeks): skip base, build straight to peak, 1 taper week
+  if (phase === 'compressed' || planWeeks <= 9) {
+    const n      = planWeeks
+    const buildN = n - 1
+    const mults: number[] = []
+    for (let w = 0; w < buildN; w++) {
+      const isRecovery = buildN >= 4 && (w + 1) % 3 === 0
+      if (isRecovery) {
+        mults.push(0.85)
+      } else {
+        const frac = w / Math.max(1, buildN - 1)
+        mults.push(parseFloat((1.05 + frac * (peakMult - 1.05)).toFixed(2)))
+      }
+    }
+    return { multipliers: [...mults, 0.65], peakMultiplier: peakMult }
+  }
+
+  // Full / base_block (10-12 weeks): standard canonical periodisation
+  const canonical12: number[] = isLong
+    ? [1.00, 1.05, 1.10, 0.85, 1.15, 1.20, 1.25, 0.90, 1.30, 0.85, 0.70, 0.50]
+    : [1.00, 1.05, 1.10, 0.85, 1.15, 1.20, 1.25, 0.90, 1.30, 1.35, 0.80, 0.55]
+
+  if (planWeeks >= 12) return { multipliers: canonical12, peakMultiplier: peakMult }
+
+  // Compress canonical to planWeeks: keep taper intact, sample build weeks
+  const taperN   = isLong ? 3 : 2
+  const taperPart = canonical12.slice(-taperN)
+  const buildPart = canonical12.slice(0, -taperN)
+  const buildN    = planWeeks - taperN
+
+  if (buildN <= 0) {
+    return { multipliers: taperPart.slice(-planWeeks), peakMultiplier: peakMult }
+  }
+
+  const sampledBuild = Array.from({ length: buildN }, (_, i) => {
+    const idx = Math.round(i * (buildPart.length - 1) / Math.max(1, buildN - 1))
+    return buildPart[Math.min(idx, buildPart.length - 1)]
+  })
+  return { multipliers: [...sampledBuild, ...taperPart], peakMultiplier: peakMult }
 }
 
 // ── Template-based weekly schedule ───────────────────────────────────────────
@@ -530,7 +659,7 @@ function pickSpread(candidates: number[], n: number, anchors: number[]): number[
 
 // ── Base week construction ────────────────────────────────────────────────────
 
-function buildBaseWeek(ctx: UserContext, taperConfig: TaperConfig): AiSession[] {
+function buildBaseWeek(ctx: UserContext, peakMultiplier: number, phase: PlanPhase): AiSession[] {
   const { disciplines, training_phase, preferences } = ctx.user
 
   // Discipline filtering — ONLY create sessions for athlete's chosen disciplines
@@ -545,9 +674,10 @@ function buildBaseWeek(ctx: UserContext, taperConfig: TaperConfig): AiSession[] 
   const goalType    = ctx.goal?.event_type ?? (preferences.goal_event_type as string ?? '')
   const caps        = getCapsForGoal(level, goalType)
   const startPct    = isReturn ? 0.60 : 0.90
-  const { peakMultiplier } = taperConfig
 
+  // No quality sessions during race week or race prep phases
   const hasQuality = level !== 'beginner' && !isReturn
+    && phase !== 'race_week' && phase !== 'race_prep'
 
   // Week-1 km per discipline, capped so peak never exceeds goal cap
   function w1km(disc: string, cap: number): number {
@@ -621,9 +751,9 @@ function buildBaseWeek(ctx: UserContext, taperConfig: TaperConfig): AiSession[] 
   return sorted
 }
 
-// ── 12-week expansion ─────────────────────────────────────────────────────────
+// ── Week expansion ────────────────────────────────────────────────────────────
 
-function expandToTwelveWeeks(
+function expandPlan(
   baseSessions: AiSession[],
   multipliers: readonly number[],
 ): Array<{ week: number; sessions: AiSession[] }> {
@@ -717,42 +847,30 @@ export async function generatePlanSkeleton(
   onProgress?.('Building your plan…')
 
   const goalType    = context.goal?.event_type ?? (context.user.preferences.goal_event_type as string ?? '')
-  const taperConfig = getTaperConfig(goalType)
+  const targetDate  = context.goal?.target_date as string | undefined
+  const preferredStart = context.user.preferences.plan_start_date as string | undefined
 
-  const baseSessions = buildBaseWeek(context, taperConfig)
-  const allWeeks     = expandToTwelveWeeks(baseSessions, taperConfig.multipliers)
+  const timing = calculatePlanTiming(targetDate, preferredStart)
+  const { multipliers, peakMultiplier } = buildPlanMultipliers(timing.planWeeks, goalType, timing.phase)
 
-  function nextOrSameMonday(d: Date): Date {
-    const day = d.getDay()
-    if (day === 1) return d
-    const offset = day === 0 ? 1 : 8 - day
-    const m = new Date(d)
-    m.setDate(d.getDate() + offset)
-    return m
-  }
+  console.log('[PLAN] TIMING:', { planWeeks: timing.planWeeks, phase: timing.phase, startDate: format(timing.startDate, 'yyyy-MM-dd'), weeksUntilRace: timing.weeksUntilRace })
+  console.log('[PLAN] MULTIPLIERS:', multipliers)
 
-  const planStartPref = context.user.preferences.plan_start_date as string | undefined
-  const startDate = planStartPref
-    ? nextOrSameMonday(new Date(planStartPref + 'T12:00:00'))
-    : (() => {
-        const now = new Date()
-        const day = now.getDay()
-        const offset = (8 - day) % 7 || 7
-        const m = new Date(now)
-        m.setDate(now.getDate() + offset)
-        return m
-      })()
+  const baseSessions = buildBaseWeek(context, peakMultiplier, timing.phase)
+  const allWeeks     = expandPlan(baseSessions, multipliers)
+  const startDate    = timing.startDate
 
   console.log('[PLAN] DB insert:', Date.now())
 
   const { data: plan } = await supabase
     .from('training_plans')
     .insert({
-      user_id:     userId,
-      start_date:  format(startDate, 'yyyy-MM-dd'),
-      end_date:    format(addDays(startDate, 83), 'yyyy-MM-dd'),
-      total_weeks: 12,
-      status:      'active',
+      user_id:            userId,
+      start_date:         format(startDate, 'yyyy-MM-dd'),
+      end_date:           format(addDays(startDate, timing.planWeeks * 7 - 1), 'yyyy-MM-dd'),
+      total_weeks:        timing.planWeeks,
+      status:             'active',
+      pre_plan_message:   timing.userMessage,
     })
     .select()
     .single()
@@ -765,7 +883,7 @@ export async function generatePlanSkeleton(
   }
 
   console.log('[PLAN] Done:', Date.now())
-  console.log(`[PLAN] Inserted ${rows.length} sessions across 12 weeks`)
+  console.log(`[PLAN] Inserted ${rows.length} sessions across ${timing.planWeeks} weeks (phase: ${timing.phase})`)
 }
 
 export async function generatePlan(userId: string, context: UserContext): Promise<void> {

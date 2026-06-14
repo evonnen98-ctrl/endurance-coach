@@ -31,15 +31,19 @@ export default function TodayPage() {
     },
   })
 
-  const { data: activePlanId } = useQuery({
+  const { data: activePlan } = useQuery({
     queryKey: ['active-plan-id'],
     queryFn: async () => {
       const { data } = await supabase
-        .from('training_plans').select('id').eq('user_id', DEMO_USER_ID).eq('status', 'active')
+        .from('training_plans').select('id, start_date, pre_plan_message').eq('user_id', DEMO_USER_ID).eq('status', 'active')
         .order('created_at', { ascending: false }).limit(1).maybeSingle()
-      return data?.id ?? null
+      return data ?? null
     },
   })
+  const activePlanId      = activePlan?.id ?? null
+  const planStartDate     = activePlan?.start_date as string | undefined
+  const prePlanMessage    = activePlan?.pre_plan_message as string | undefined
+  const planNotStarted    = planStartDate ? planStartDate > TODAY_STR : false
 
   const { data: todaySession } = useQuery({
     queryKey: ['today-session', TODAY_STR, activePlanId],
@@ -123,12 +127,24 @@ export default function TodayPage() {
           </div>
         )}
 
+        {/* Pre-plan message (race far away — plan starts in future) */}
+        {planNotStarted && prePlanMessage && (
+          <div className="mx-5 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4">
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-amber-600 mb-1">Coming up</div>
+            <p className="text-sm text-amber-900">{prePlanMessage}</p>
+          </div>
+        )}
+
         {/* Today's workout */}
         {todaySession ? (
           <TodaySession
             session={todaySession}
             weekSessions={weekSessions}
           />
+        ) : planNotStarted ? (
+          <div className="mx-5 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center">
+            <p className="text-gray-400 text-sm">Your plan starts on {planStartDate ? new Date(planStartDate + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' }) : 'soon'}.</p>
+          </div>
         ) : (
           <div className="mx-5 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center">
             <p className="text-gray-400 text-sm">Rest day — no session scheduled.</p>
