@@ -130,7 +130,7 @@ export default function OnboardingFlow({ existingUser }: Props) {
     ])
 
     await waitForServer()
-    setBuildMessage('Building your 12-week plan…')
+    setBuildMessage('Building your training plan…')
 
     try {
       await new Promise<void>((resolve) => {

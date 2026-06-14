@@ -262,8 +262,10 @@ interface PlanTiming {
   planWeeks:      number
   startDate:      Date
   phase:          PlanPhase
+  phaseLabel:     string
   userMessage:    string | null
   weeksUntilRace: number | null
+  nextBlockDate?: string  // ISO date — when Block 2 starts (two-block plans)
 }
 
 function nextMonday(d: Date): Date {
@@ -276,74 +278,86 @@ function nextMonday(d: Date): Date {
 }
 
 function calculatePlanTiming(
-  targetDate:           string | undefined | null,
-  preferredStartDate:   string | undefined | null,
+  targetDate:         string | undefined | null,
+  preferredStartDate: string | undefined | null,
 ): PlanTiming {
-  const today        = new Date()
-  const defaultStart = preferredStartDate
+  const today     = new Date()
+  const msPerWeek = 7 * 24 * 60 * 60 * 1000
+
+  // Start date: what the user chose (or next Monday by default)
+  const startDate = preferredStartDate
     ? nextMonday(new Date(preferredStartDate + 'T12:00:00'))
     : nextMonday(today)
 
+  // No race → 12-week base block
   if (!targetDate) {
-    return { planWeeks: 12, startDate: defaultStart, phase: 'base_block', userMessage: null, weeksUntilRace: null }
+    return {
+      planWeeks: 12, startDate, phase: 'base_block', phaseLabel: 'Base Block',
+      userMessage: null, weeksUntilRace: null,
+    }
   }
 
   const raceDate       = new Date(targetDate + 'T12:00:00')
-  const msPerWeek      = 7 * 24 * 60 * 60 * 1000
-  const weeksUntilRace = Math.floor((raceDate.getTime() - today.getTime()) / msPerWeek)
+  const totalWeeks     = Math.floor((raceDate.getTime() - startDate.getTime()) / msPerWeek)
+  const weeksFromToday = Math.floor((raceDate.getTime() - today.getTime()) / msPerWeek)
 
-  // Race already passed — always generate something
-  if (weeksUntilRace <= 0) {
+  // Race passed or same week
+  if (totalWeeks <= 0) {
     return {
-      planWeeks:   12,
-      startDate:   defaultStart,
-      phase:       'base_block',
-      userMessage: 'Your race date has passed. Starting a fresh 12-week base building block.',
-      weeksUntilRace: 0,
+      planWeeks: 1, startDate, phase: 'race_week', phaseLabel: 'Race Week',
+      userMessage: 'Race day is here — rest, stay sharp, and focus on race-day logistics.',
+      weeksUntilRace: weeksFromToday,
     }
   }
-  // Far-out race: start a 12-week base block NOW (not deferred to 12 weeks before race)
-  if (weeksUntilRace > 16) {
-    const raceSpecificStart = addDays(defaultStart, 84)
+
+  // ≤4 weeks: Race Prep Block — easy sessions + sharpening, no building
+  if (totalWeeks <= 4) {
     return {
-      planWeeks:   12,
-      startDate:   defaultStart,
-      phase:       'base_block',
-      userMessage: `Your race is ${weeksUntilRace} weeks away — plenty of time. We're building your aerobic base now. Race-specific prep begins around ${format(raceSpecificStart, 'd MMM yyyy')}.`,
-      weeksUntilRace,
+      planWeeks: totalWeeks, startDate, phase: 'race_prep', phaseLabel: 'Race Prep Block',
+      userMessage: `${totalWeeks} week${totalWeeks !== 1 ? 's' : ''} to race day — focusing on sharpening your fitness and arriving fresh.`,
+      weeksUntilRace: weeksFromToday,
     }
   }
-  // 12-16 weeks: full periodised plan
-  if (weeksUntilRace >= 12) {
-    return { planWeeks: weeksUntilRace, startDate: defaultStart, phase: 'full', userMessage: null, weeksUntilRace }
-  }
-  // 8-11 weeks: skip base phase, go straight into race-specific build
-  if (weeksUntilRace >= 8) {
+
+  // 5-8 weeks: Race Ready Block — compressed, skip base, taper last week
+  if (totalWeeks <= 8) {
     return {
-      planWeeks:   weeksUntilRace,
-      startDate:   defaultStart,
-      phase:       'compressed',
-      userMessage: `With ${weeksUntilRace} weeks to race day, we're going straight into race-specific preparation — no base phase needed.`,
-      weeksUntilRace,
+      planWeeks: totalWeeks, startDate, phase: 'compressed', phaseLabel: 'Race Ready Block',
+      userMessage: `${totalWeeks} weeks to go — skipping base phase and going straight into race-specific work. Taper in the final week.`,
+      weeksUntilRace: weeksFromToday,
     }
   }
-  // 4-7 weeks: race prep focus, sharpen and taper
-  if (weeksUntilRace >= 4) {
+
+  // 9-14 weeks: Standard plan (Base 40% + Build 40% + Peak 15% + Taper)
+  if (totalWeeks <= 14) {
     return {
-      planWeeks:   weeksUntilRace,
-      startDate:   defaultStart,
-      phase:       'race_prep',
-      userMessage: `Race day is close. We'll focus on sharpening your fitness and arriving fresh.`,
-      weeksUntilRace,
+      planWeeks: totalWeeks, startDate, phase: 'full', phaseLabel: 'Race Plan',
+      userMessage: null, weeksUntilRace: weeksFromToday,
     }
   }
-  // Under 4 weeks: taper only
+
+  // 15-24 weeks: Two blocks — base building now, race-specific block later
+  if (totalWeeks <= 24) {
+    const baseWeeks     = totalWeeks - 10
+    const block2Start   = addDays(startDate, baseWeeks * 7)
+    const nextBlockDate = format(block2Start, 'yyyy-MM-dd')
+    return {
+      planWeeks: baseWeeks, startDate, phase: 'base_block', phaseLabel: 'Base Block',
+      nextBlockDate,
+      userMessage: `${totalWeeks} weeks to race day. Building your aerobic base for ${baseWeeks} weeks first — race-specific training begins ${format(block2Start, 'd MMM yyyy')}.`,
+      weeksUntilRace: weeksFromToday,
+    }
+  }
+
+  // >24 weeks: 12-week base block, reassess after
+  const months    = Math.round(totalWeeks / 4.33)
+  const timeLabel = months >= 12
+    ? `${Math.round(months / 12)} year${Math.round(months / 12) > 1 ? 's' : ''}`
+    : `${months} months`
   return {
-    planWeeks:   Math.max(1, weeksUntilRace),
-    startDate:   defaultStart,
-    phase:       'race_week',
-    userMessage: `You're in the final stretch. Focus on rest, staying sharp, and race-day logistics.`,
-    weeksUntilRace,
+    planWeeks: 12, startDate, phase: 'base_block', phaseLabel: 'Base Block',
+    userMessage: `Your race is ${timeLabel} away — building fitness in 12-week blocks and reassessing as race day approaches.`,
+    weeksUntilRace: weeksFromToday,
   }
 }
 
@@ -376,7 +390,7 @@ function buildPlanMultipliers(
   }
 
   // Compressed (6-9 weeks): skip base, build straight to peak, 1 taper week
-  if (phase === 'compressed' || planWeeks <= 9) {
+  if (phase === 'compressed' || (planWeeks <= 9 && phase !== 'full')) {
     const n      = planWeeks
     const buildN = n - 1
     const mults: number[] = []
@@ -397,7 +411,16 @@ function buildPlanMultipliers(
     ? [1.00, 1.05, 1.10, 0.85, 1.15, 1.20, 1.25, 0.90, 1.30, 0.85, 0.70, 0.50]
     : [1.00, 1.05, 1.10, 0.85, 1.15, 1.20, 1.25, 0.90, 1.30, 1.35, 0.80, 0.55]
 
-  if (planWeeks >= 12) return { multipliers: canonical12, peakMultiplier: peakMult }
+  if (planWeeks === 12) return { multipliers: canonical12, peakMultiplier: peakMult }
+
+  // >12 weeks: prepend extra base weeks before the canonical 12
+  if (planWeeks > 12) {
+    const extraN = planWeeks - 12
+    const extra  = Array.from({ length: extraN }, (_, i) =>
+      parseFloat((0.80 + (i / extraN) * 0.20).toFixed(2)),
+    )
+    return { multipliers: [...extra, ...canonical12], peakMultiplier: peakMult }
+  }
 
   // Compress canonical to planWeeks: keep taper intact, sample build weeks
   const taperN   = isLong ? 3 : 2
@@ -760,6 +783,7 @@ interface CoachNoteConstraints {
 }
 
 function parseCoachNotes(notes: string): CoachNoteConstraints {
+  console.log('[NOTES] RAW NOTES INPUT:', notes)
   if (!notes?.trim()) return {}
   const lower = notes.toLowerCase()
   const result: CoachNoteConstraints = {}
@@ -808,6 +832,7 @@ function parseCoachNotes(notes: string): CoachNoteConstraints {
   if (rideN !== undefined) result.rideSessions = rideN
   if (swimN !== undefined) result.swimSessions = swimN
 
+  console.log('[NOTES] PARSED RESULT:', JSON.stringify(result))
   return result
 }
 
@@ -1080,13 +1105,14 @@ export async function generatePlanSkeleton(
 
   console.log('[PLAN] DB insert:', Date.now())
 
-  // Store (or clear) pre-plan message in preferences — avoids needing a schema change
+  // Store plan timeline metadata in preferences — avoids needing schema changes
   const updatedPrefs = { ...(context.user.preferences as Record<string, unknown>) }
-  if (timing.userMessage) {
-    updatedPrefs.pre_plan_message = timing.userMessage
-  } else {
-    delete updatedPrefs.pre_plan_message
-  }
+  if (timing.userMessage) updatedPrefs.pre_plan_message  = timing.userMessage
+  else delete updatedPrefs.pre_plan_message
+  if (timing.phaseLabel)   updatedPrefs.plan_phase_label = timing.phaseLabel
+  else delete updatedPrefs.plan_phase_label
+  if (timing.nextBlockDate) updatedPrefs.next_block_date = timing.nextBlockDate
+  else delete updatedPrefs.next_block_date
   await supabase.from('users').update({ preferences: updatedPrefs }).eq('id', userId)
 
   const { data: plan, error: planError } = await supabase

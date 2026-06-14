@@ -35,15 +35,31 @@ export default function TodayPage() {
     queryKey: ['active-plan-id'],
     queryFn: async () => {
       const { data } = await supabase
-        .from('training_plans').select('id, start_date').eq('user_id', DEMO_USER_ID).eq('status', 'active')
+        .from('training_plans').select('id, start_date, total_weeks').eq('user_id', DEMO_USER_ID).eq('status', 'active')
         .order('created_at', { ascending: false }).limit(1).maybeSingle()
       return data ?? null
     },
   })
-  const activePlanId   = activePlan?.id ?? null
-  const planStartDate  = activePlan?.start_date as string | undefined
-  const prePlanMessage = (user?.preferences as Record<string, unknown> | undefined)?.pre_plan_message as string | undefined
-  const planNotStarted = planStartDate ? planStartDate > TODAY_STR : false
+  const activePlanId      = activePlan?.id ?? null
+  const planStartDate     = activePlan?.start_date as string | undefined
+  const activePlanWeeks   = (activePlan?.total_weeks ?? null) as number | null
+  const prefs             = (user?.preferences ?? {}) as Record<string, unknown>
+  const prePlanMessage    = prefs.pre_plan_message as string | undefined
+  const planPhaseLabel    = prefs.plan_phase_label as string | undefined
+  const nextBlockDate     = prefs.next_block_date  as string | undefined
+  const planNotStarted    = planStartDate ? planStartDate > TODAY_STR : false
+
+  const planCurrentWeek = planStartDate && !planNotStarted && activePlanWeeks
+    ? Math.min(activePlanWeeks, Math.max(1, Math.ceil(differenceInDays(TODAY, parseISO(planStartDate)) / 7) + 1))
+    : null
+
+  const planTimeline = planCurrentWeek && activePlanWeeks
+    ? [
+        `Week ${planCurrentWeek} of ${activePlanWeeks}`,
+        planPhaseLabel ?? null,
+        nextBlockDate ? `Next block starts ${format(parseISO(nextBlockDate), 'd MMM')}` : null,
+      ].filter(Boolean).join(' · ')
+    : null
 
   const { data: todaySession } = useQuery({
     queryKey: ['today-session', TODAY_STR, activePlanId],
@@ -127,11 +143,25 @@ export default function TodayPage() {
           </div>
         )}
 
-        {/* Pre-plan message (race far away — plan starts in future) */}
-        {planNotStarted && prePlanMessage && (
+        {/* Plan timeline — shown once plan is active */}
+        {planTimeline && (
+          <div className="mx-5 bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-1">Training plan</div>
+            <p className="text-sm font-semibold text-gray-800">{planTimeline}</p>
+            {prePlanMessage && (
+              <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">{prePlanMessage}</p>
+            )}
+          </div>
+        )}
+
+        {/* Pre-plan banner — plan exists but hasn't started yet */}
+        {planNotStarted && (
           <div className="mx-5 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4">
             <div className="text-[10px] font-semibold uppercase tracking-widest text-amber-600 mb-1">Coming up</div>
-            <p className="text-sm text-amber-900">{prePlanMessage}</p>
+            {prePlanMessage && <p className="text-sm text-amber-900 mb-1">{prePlanMessage}</p>}
+            <p className="text-sm text-amber-800 font-medium">
+              Your plan starts on {planStartDate ? new Date(planStartDate + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' }) : 'soon'}.
+            </p>
           </div>
         )}
 
@@ -143,7 +173,7 @@ export default function TodayPage() {
           />
         ) : planNotStarted ? (
           <div className="mx-5 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center">
-            <p className="text-gray-400 text-sm">Your plan starts on {planStartDate ? new Date(planStartDate + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' }) : 'soon'}.</p>
+            <p className="text-gray-400 text-sm">Rest up — training starts soon.</p>
           </div>
         ) : (
           <div className="mx-5 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center">

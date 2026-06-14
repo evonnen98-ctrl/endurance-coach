@@ -18,14 +18,21 @@ function getRaceEvents(disciplines: Discipline[]): string[] {
   return []
 }
 
-function getDefaultPlanStart(): string {
+function getNextMonday(offsetWeeks = 0): string {
   const now = new Date()
   const day = now.getDay()
-  const offset = (8 - day) % 7 || 7
-  const mon = new Date(now)
-  mon.setDate(now.getDate() + offset)
-  return mon.toISOString().slice(0, 10)
+  const toMon = day === 1 ? 7 : (8 - day) % 7 || 7
+  const d = new Date(now)
+  d.setDate(now.getDate() + toMon + offsetWeeks * 7)
+  return d.toISOString().slice(0, 10)
 }
+
+const START_OPTIONS = [
+  { label: 'Next Monday', offset: 0 },
+  { label: 'In 2 weeks',  offset: 2 },
+  { label: 'In 4 weeks',  offset: 4 },
+  { label: 'Custom date', offset: -1 },
+] as const
 
 interface Props {
   disciplines: Discipline[]
@@ -54,7 +61,8 @@ export default function Step2GoalStats({
 }: Props) {
   const [eventType, setEventType] = useState(initialEventType)
   const [targetDate, setTargetDate] = useState(initialTargetDate)
-  const [planStartDate, setPlanStartDate] = useState(getDefaultPlanStart)
+  const [startOption, setStartOption] = useState('Next Monday')
+  const [planStartDate, setPlanStartDate] = useState(() => getNextMonday(0))
   const [stats, setStats] = useState<Record<string, string>>(initialStats)
   const [coachNote, setCoachNote] = useState(initialCoachNote)
   const [selectedDays, setSelectedDays] = useState<string[]>(initialSelectedDays)
@@ -63,6 +71,11 @@ export default function Step2GoalStats({
     setSelectedDays(prev =>
       prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
     )
+  }
+
+  function selectStart(label: string, offset: number) {
+    setStartOption(label)
+    if (offset >= 0) setPlanStartDate(getNextMonday(offset))
   }
 
   const isRace = phase === 'race'
@@ -89,34 +102,38 @@ export default function Step2GoalStats({
 
       {/* ── Goal ── */}
       {isRace ? (
-        <section className="mb-8">
-          <h2 className="text-lg font-semibold mb-1">What's your goal event?</h2>
-          <p className="text-gray-500 text-sm mb-4">Choose the format you're targeting.</p>
-          <div className="grid grid-cols-2 gap-2 mb-5">
-            {events.map(e => (
-              <button
-                key={e}
-                onClick={() => setEventType(e)}
-                className={`py-3 px-4 rounded-xl border-2 text-sm font-medium transition-all ${
-                  eventType === e
-                    ? 'border-black bg-black text-white'
-                    : 'border-gray-200 bg-white text-gray-800 hover:border-gray-400'
-                }`}
-              >
-                {e}
-              </button>
-            ))}
-          </div>
-          <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">
-            Target race date
-          </label>
-          <input
-            type="date"
-            value={targetDate}
-            onChange={e => setTargetDate(e.target.value)}
-            className="w-full p-3 border border-gray-200 rounded-xl text-base"
-          />
-        </section>
+        <>
+          <section className="mb-8">
+            <h2 className="text-lg font-semibold mb-1">What's your goal event?</h2>
+            <p className="text-gray-500 text-sm mb-4">Choose the format you're targeting.</p>
+            <div className="grid grid-cols-2 gap-2">
+              {events.map(e => (
+                <button
+                  key={e}
+                  onClick={() => setEventType(e)}
+                  className={`py-3 px-4 rounded-xl border-2 text-sm font-medium transition-all ${
+                    eventType === e
+                      ? 'border-black bg-black text-white'
+                      : 'border-gray-200 bg-white text-gray-800 hover:border-gray-400'
+                  }`}
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="mb-8">
+            <h2 className="text-lg font-semibold mb-1">When is your race?</h2>
+            <p className="text-gray-500 text-sm mb-4">Your plan length and structure adapts to this date.</p>
+            <input
+              type="date"
+              value={targetDate}
+              onChange={e => setTargetDate(e.target.value)}
+              className="w-full p-3 border border-gray-200 rounded-xl text-base"
+            />
+          </section>
+        </>
       ) : (
         <section className="mb-8">
           <h2 className="text-lg font-semibold mb-1">Any specific goals?</h2>
@@ -267,14 +284,32 @@ export default function Step2GoalStats({
 
       {/* ── Plan start date ── */}
       <section className="mb-8">
-        <h2 className="text-lg font-semibold mb-1">When do you want to start your plan?</h2>
-        <p className="text-gray-500 text-sm mb-4">Plans start on Mondays. If you pick a mid-week date, we'll start the following Monday.</p>
-        <input
-          type="date"
-          value={planStartDate}
-          onChange={e => setPlanStartDate(e.target.value)}
-          className="w-full p-3 border border-gray-200 rounded-xl text-base"
-        />
+        <h2 className="text-lg font-semibold mb-1">When do you want to start?</h2>
+        <p className="text-gray-500 text-sm mb-4">Plans begin on Mondays.</p>
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          {START_OPTIONS.map(opt => (
+            <button
+              key={opt.label}
+              type="button"
+              onClick={() => selectStart(opt.label, opt.offset)}
+              className={`py-3 px-4 rounded-xl border-2 text-sm font-medium transition-all ${
+                startOption === opt.label
+                  ? 'border-black bg-black text-white'
+                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {startOption === 'Custom date' && (
+          <input
+            type="date"
+            value={planStartDate}
+            onChange={e => setPlanStartDate(e.target.value)}
+            className="w-full p-3 border border-gray-200 rounded-xl text-base"
+          />
+        )}
       </section>
 
       {/* ── Coach note ── */}
