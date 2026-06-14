@@ -151,7 +151,7 @@ export default function Step2GoalStats({
               <p className="font-semibold text-sm mb-3 text-gray-700">Running</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
+                  <label className="block min-h-[2rem] text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
                     Weekly km
                   </label>
                   <input
@@ -163,8 +163,8 @@ export default function Step2GoalStats({
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
-                    Easy pace (min/km) <span className="normal-case font-normal">(optional)</span>
+                  <label className="block min-h-[2rem] text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
+                    Easy pace <span className="normal-case font-normal">(optional)</span>
                   </label>
                   <input
                     type="text"
@@ -183,7 +183,7 @@ export default function Step2GoalStats({
               <p className="font-semibold text-sm mb-3 text-gray-700">Cycling</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
+                  <label className="block min-h-[2rem] text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
                     Weekly km
                   </label>
                   <input
@@ -195,8 +195,8 @@ export default function Step2GoalStats({
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
-                    Avg speed (km/h) <span className="normal-case font-normal">(optional)</span>
+                  <label className="block min-h-[2rem] text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
+                    Avg speed <span className="normal-case font-normal">(optional)</span>
                   </label>
                   <input
                     type="number"
@@ -215,7 +215,7 @@ export default function Step2GoalStats({
               <p className="font-semibold text-sm mb-3 text-gray-700">Swimming</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
+                  <label className="block min-h-[2rem] text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
                     Weekly km
                   </label>
                   <input
@@ -227,8 +227,8 @@ export default function Step2GoalStats({
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
-                    Comfortable 100m pace <span className="normal-case font-normal">(optional)</span>
+                  <label className="block min-h-[2rem] text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
+                    100m pace <span className="normal-case font-normal">(optional)</span>
                   </label>
                   <input
                     type="text"

@@ -292,44 +292,57 @@ function calculatePlanTiming(
   const msPerWeek      = 7 * 24 * 60 * 60 * 1000
   const weeksUntilRace = Math.floor((raceDate.getTime() - today.getTime()) / msPerWeek)
 
+  // Race already passed — always generate something
+  if (weeksUntilRace <= 0) {
+    return {
+      planWeeks:   12,
+      startDate:   defaultStart,
+      phase:       'base_block',
+      userMessage: 'Your race date has passed. Starting a fresh 12-week base building block.',
+      weeksUntilRace: 0,
+    }
+  }
+  // Far-out race: start a 12-week base block NOW (not deferred to 12 weeks before race)
   if (weeksUntilRace > 16) {
-    const blockStart = new Date(raceDate)
-    blockStart.setDate(raceDate.getDate() - 84)
-    const startMon = nextMonday(blockStart)
+    const raceSpecificStart = addDays(defaultStart, 84)
     return {
-      planWeeks:      12,
-      startDate:      startMon,
-      phase:          'full',
-      userMessage:    `Your race is ${weeksUntilRace} weeks away. We'll start your peak 12-week block on ${format(startMon, 'd MMM yyyy')}. Keep building your base until then.`,
+      planWeeks:   12,
+      startDate:   defaultStart,
+      phase:       'base_block',
+      userMessage: `Your race is ${weeksUntilRace} weeks away — plenty of time. We're building your aerobic base now. Race-specific prep begins around ${format(raceSpecificStart, 'd MMM yyyy')}.`,
       weeksUntilRace,
     }
   }
-  if (weeksUntilRace >= 10) {
-    return { planWeeks: weeksUntilRace, startDate: defaultStart, phase: 'full',       userMessage: null, weeksUntilRace }
+  // 12-16 weeks: full periodised plan
+  if (weeksUntilRace >= 12) {
+    return { planWeeks: weeksUntilRace, startDate: defaultStart, phase: 'full', userMessage: null, weeksUntilRace }
   }
-  if (weeksUntilRace >= 6) {
+  // 8-11 weeks: skip base phase, go straight into race-specific build
+  if (weeksUntilRace >= 8) {
     return {
-      planWeeks:      weeksUntilRace,
-      startDate:      defaultStart,
-      phase:          'compressed',
-      userMessage:    `With ${weeksUntilRace} weeks to race day, we'll focus on race-specific preparation and skip the base phase.`,
+      planWeeks:   weeksUntilRace,
+      startDate:   defaultStart,
+      phase:       'compressed',
+      userMessage: `With ${weeksUntilRace} weeks to race day, we're going straight into race-specific preparation — no base phase needed.`,
       weeksUntilRace,
     }
   }
-  if (weeksUntilRace >= 3) {
+  // 4-7 weeks: race prep focus, sharpen and taper
+  if (weeksUntilRace >= 4) {
     return {
-      planWeeks:      weeksUntilRace,
-      startDate:      defaultStart,
-      phase:          'race_prep',
-      userMessage:    `Race day is close. This plan focuses on arriving fresh and confident — easy sessions, some race pace work, and smart tapering.`,
+      planWeeks:   weeksUntilRace,
+      startDate:   defaultStart,
+      phase:       'race_prep',
+      userMessage: `Race day is close. We'll focus on sharpening your fitness and arriving fresh.`,
       weeksUntilRace,
     }
   }
+  // Under 4 weeks: taper only
   return {
-    planWeeks:      Math.max(1, weeksUntilRace),
-    startDate:      defaultStart,
-    phase:          'race_week',
-    userMessage:    `You're in race week territory. Focus on rest, nutrition, and race-day prep. Keep sessions short and easy.`,
+    planWeeks:   Math.max(1, weeksUntilRace),
+    startDate:   defaultStart,
+    phase:       'race_week',
+    userMessage: `You're in the final stretch. Focus on rest, staying sharp, and race-day logistics.`,
     weeksUntilRace,
   }
 }
@@ -653,27 +666,147 @@ function pickSpread(candidates: number[], n: number, anchors: number[]): number[
   return result
 }
 
+// ── Notes-driven template: places exact per-discipline session counts ──────────
+
+function buildNotesDrivenTemplate(
+  runCount:   number,
+  rideCount:  number,
+  swimCount:  number,
+  longDayIdx: number,
+  pool:       number[],
+  hasQuality: boolean,
+): Array<{ dayIdx: number; slot: Slot }> {
+  const longRunDay  = nearestAllowedDay(longDayIdx, pool)
+  const longRideDay = findAdjacentDay(longRunDay, pool)
+
+  type ToPlace = { disc: 'run' | 'ride' | 'swim'; type: string; preferDay?: number }
+  const toPlace: ToPlace[] = []
+
+  if (runCount > 0) {
+    toPlace.push({ disc: 'run', type: 'long', preferDay: longRunDay })
+    for (let i = 1; i < runCount; i++) {
+      toPlace.push({ disc: 'run', type: hasQuality && i === runCount - 1 ? 'tempo' : 'easy' })
+    }
+  }
+  if (rideCount > 0) {
+    toPlace.push({ disc: 'ride', type: 'long', preferDay: longRideDay })
+    for (let i = 1; i < rideCount; i++) {
+      toPlace.push({ disc: 'ride', type: hasQuality && i === rideCount - 1 ? 'tempo' : 'easy' })
+    }
+  }
+  for (let i = 0; i < swimCount; i++) {
+    toPlace.push({ disc: 'swim', type: i === swimCount - 1 ? 'interval' : 'base' })
+  }
+
+  // Track what's scheduled per day (no two of same disc; max 2 per day)
+  const dayMap: Map<number, ('run' | 'ride' | 'swim')[]> = new Map()
+  for (const d of pool) dayMap.set(d, [])
+
+  const placed: Array<{ dayIdx: number; disc: 'run' | 'ride' | 'swim'; type: string }> = []
+
+  for (const s of toPlace) {
+    let target: number | undefined
+
+    // Try preferred day (for anchor sessions)
+    if (s.preferDay !== undefined) {
+      const on = dayMap.get(s.preferDay) ?? []
+      if (!on.includes(s.disc) && on.length < 2) target = s.preferDay
+    }
+
+    // Find best available day: fewest sessions, no same disc, max 2 total
+    if (target === undefined) {
+      let bestCount = 999
+      for (const [d, on] of dayMap) {
+        if (on.includes(s.disc) || on.length >= 2) continue
+        if (on.length < bestCount) { bestCount = on.length; target = d }
+      }
+    }
+
+    if (target === undefined) continue  // can't place — pool is full, skip
+    dayMap.get(target)!.push(s.disc)
+    placed.push({ dayIdx: target, disc: s.disc, type: s.type })
+  }
+
+  const runPlaced  = placed.filter(e => e.disc === 'run')
+  const ridePlaced = placed.filter(e => e.disc === 'ride')
+  const swimPlaced = placed.filter(e => e.disc === 'swim')
+
+  function shares(entries: typeof placed): number[] {
+    if (!entries.length) return []
+    const w = entries.map(e => e.type === 'long' ? 2.0 : e.type === 'tempo' ? 0.9 : e.type === 'interval' ? 0.7 : 1.0)
+    const t = w.reduce((s, x) => s + x, 0)
+    return w.map(x => x / t)
+  }
+
+  const rs = shares(runPlaced), rids = shares(ridePlaced), ss = shares(swimPlaced)
+
+  return [
+    ...runPlaced.map((e, i)  => ({ dayIdx: e.dayIdx, slot: { disc: e.disc, type: e.type, kmShare: rs[i],   minPerKm: 6.5 } as Slot })),
+    ...ridePlaced.map((e, i) => ({ dayIdx: e.dayIdx, slot: { disc: e.disc, type: e.type, kmShare: rids[i], minPerKm: 2.2 } as Slot })),
+    ...swimPlaced.map((e, i) => ({ dayIdx: e.dayIdx, slot: { disc: e.disc, type: e.type, kmShare: ss[i],   minPerKm: 30  } as Slot })),
+  ]
+}
+
 // ── Coach notes constraint parser ─────────────────────────────────────────────
 
-function parseCoachNotes(notes: string): {
-  weekdayMaxMin?: number
+interface CoachNoteConstraints {
+  weekdayMaxMin?:    number
   longRunDayOverride?: number
   avoidHighImpactRun?: boolean
-} {
+  totalSessions?:    number
+  runSessions?:      number
+  rideSessions?:     number
+  swimSessions?:     number
+}
+
+function parseCoachNotes(notes: string): CoachNoteConstraints {
   if (!notes?.trim()) return {}
   const lower = notes.toLowerCase()
-  const result: { weekdayMaxMin?: number; longRunDayOverride?: number; avoidHighImpactRun?: boolean } = {}
+  const result: CoachNoteConstraints = {}
 
+  // Duration cap: "under 60 mins", "max 60 min", "no more than 60 minutes"
   const timeMatch = lower.match(/(?:under|less than|max(?:imum)?\s*of?|no more than)\s+(\d+)\s*min/)
   if (timeMatch) result.weekdayMaxMin = parseInt(timeMatch[1])
+  else if (/(?:max|under|less than)\s+1\s+hour/.test(lower)) result.weekdayMaxMin = 60
 
+  // Long run day override: "long run on Sunday"
   const longRunMatch = lower.match(/long\s+runs?\s+on\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)s?/)
   if (longRunMatch) {
     const key = longRunMatch[1].replace(/s$/, '')
     if (DAY_INDEX[key] !== undefined) result.longRunDayOverride = DAY_INDEX[key]
   }
 
+  // Injury flags
   if (/knee|ankle|shin|calf|plantar|achilles/.test(lower)) result.avoidHighImpactRun = true
+
+  // Number word → integer helper
+  const W: Record<string, number> = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10, once:1, twice:2 }
+  function toN(s: string): number | undefined { return /^\d+$/.test(s) ? parseInt(s) : W[s] }
+  const numPat = '(\\d+|one|two|three|four|five|six|seven|eight|nine|ten|once|twice)'
+
+  // Total sessions: "9 workouts a week", "train 9 times"
+  const totalM = lower.match(new RegExp(`${numPat}\\s+(?:workouts?|sessions?|times?)\\s+(?:a|per)\\s+week`))
+    ?? lower.match(new RegExp(`train\\s+${numPat}\\s+times?(?:\\s+(?:a|per)\\s+week)?`))
+  if (totalM) { const n = toN(totalM[1]); if (n) result.totalSessions = n }
+
+  // Per-discipline counts: "3 runs", "run 3 times", "3 runs a week"
+  function discCount(sing: string, plurals: string[]): number | undefined {
+    const pp = plurals.join('|')
+    // "3 runs [a week]"
+    const m1 = lower.match(new RegExp(`${numPat}\\s+(?:${pp})(?:\\s+(?:a|per)\\s+week)?`))
+    if (m1) { const n = toN(m1[1]); if (n !== undefined) return n }
+    // "run 3 times" / "run 3x" / "run 3 per week"
+    const m2 = lower.match(new RegExp(`${sing}\\s+${numPat}(?:\\s*x|\\s+times?|\\s+(?:a|per)\\s+week)`))
+    if (m2) { const n = toN(m2[1]); if (n !== undefined) return n }
+    return undefined
+  }
+
+  const runN  = discCount('run',  ['runs'])
+  const rideN = discCount('ride', ['rides', 'bikes', 'cycles'])
+  const swimN = discCount('swim', ['swims'])
+  if (runN  !== undefined) result.runSessions  = runN
+  if (rideN !== undefined) result.rideSessions = rideN
+  if (swimN !== undefined) result.swimSessions = swimN
 
   return result
 }
@@ -743,7 +876,27 @@ function buildBaseWeek(ctx: UserContext, peakMultiplier: number, phase: PlanPhas
   console.log('[PLAN] ─────────────────────────')
 
   const discSet = classifyDisciplines([...allowedDiscs])
-  const template = buildWeekTemplate(daysPerWeek, discSet, longDayIdx, level, hasQuality, allowedDays)
+  const hasRun  = allowedDiscs.has('run')
+  const hasRide = allowedDiscs.has('ride')
+  const hasSwim = allowedDiscs.has('swim')
+  const pool    = allowedDays.length > 0 ? allowedDays : [0,1,2,3,4,5,6]
+
+  const hasNoteCounts = noteConstraints.runSessions  !== undefined
+    || noteConstraints.rideSessions !== undefined
+    || noteConstraints.swimSessions !== undefined
+
+  let template: ReturnType<typeof buildWeekTemplate>
+  if (hasNoteCounts || noteConstraints.totalSessions !== undefined) {
+    const totalDiscs = Math.max(1, allowedDiscs.size)
+    const defaultPer = Math.max(1, Math.round((noteConstraints.totalSessions ?? daysPerWeek) / totalDiscs))
+    const runCount  = hasRun  ? (noteConstraints.runSessions  ?? defaultPer) : 0
+    const rideCount = hasRide ? (noteConstraints.rideSessions ?? defaultPer) : 0
+    const swimCount = hasSwim ? (noteConstraints.swimSessions ?? defaultPer) : 0
+    console.log('[PLAN] NOTES: per-disc counts → run:', runCount, 'ride:', rideCount, 'swim:', swimCount)
+    template = buildNotesDrivenTemplate(runCount, rideCount, swimCount, longDayIdx, pool, hasQuality)
+  } else {
+    template = buildWeekTemplate(daysPerWeek, discSet, longDayIdx, level, hasQuality, allowedDays)
+  }
   console.log('[PLAN] ALLOWED_DAYS:      ', allowedDays.length > 0 ? allowedDays.map(d => ALL_DAYS[d]) : 'all')
   console.log('[PLAN] LONG_RUN_DAY:      ', ALL_DAYS[longDayIdx])
 
