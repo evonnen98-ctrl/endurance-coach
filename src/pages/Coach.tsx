@@ -3,7 +3,7 @@ import { Send } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase, DEMO_USER_ID } from '../lib/supabase'
 import { api } from '../lib/api'
-import type { CoachNote } from '../types'
+import type { CoachNote, User } from '../types'
 import CoachNoteCard from '../components/notes/CoachNoteCard'
 
 interface ChatMessage {
@@ -31,6 +31,14 @@ export default function CoachPage() {
   const [input, setInput]         = useState('')
   const [sending, setSending]     = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  const { data: user } = useQuery({
+    queryKey: ['user'],
+    queryFn: async () => {
+      const { data } = await supabase.from('users').select('*').eq('id', DEMO_USER_ID).single()
+      return data as User
+    },
+  })
 
   const { data: coachNotes = [] } = useQuery({
     queryKey: ['coach-notes'],
@@ -110,9 +118,15 @@ export default function CoachPage() {
           {/* Messages */}
           <div className="flex-1 px-4 py-5 space-y-3 overflow-y-auto">
             {messages.length === 0 && (
-              <div className="text-center pt-10">
-                <p className="text-gray-400 text-sm">Your coach is here.</p>
-                <p className="text-gray-400 text-sm mt-1">Ask anything about your training.</p>
+              <div className="mx-1 mt-4">
+                <div className="bg-white border border-gray-100 rounded-2xl rounded-bl-sm px-4 py-3 max-w-[85%]">
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-1">Coach</div>
+                  <p className="text-sm text-gray-800 leading-relaxed">
+                    {user?.coach_notes_freetext
+                      ? `I've read your notes — ${user.coach_notes_freetext.slice(0, 120)}${user.coach_notes_freetext.length > 120 ? '…' : ''}. I've built your plan around these. What's on your mind?`
+                      : `Hey${user?.name ? ` ${user.name}` : ''}. I've got your plan loaded. Ask me anything about your training.`}
+                  </p>
+                </div>
               </div>
             )}
             {messages.map((msg, i) => (

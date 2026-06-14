@@ -205,6 +205,7 @@ Phase: ${context.user.training_phase}
 Week: ${context.current_week} of 12
 Goal: ${context.goal?.event_type ?? 'general fitness'}${context.goal?.days_until_event != null ? ` — ${context.goal.days_until_event} days away` : ''}
 ${context.injury_flags ? 'INJURY FLAG: athlete has flagged an injury recently' : ''}
+${context.user.coach_notes_freetext ? `\nATHLETE'S OWN NOTES TO COACH: "${context.user.coach_notes_freetext}"\nReference these preferences naturally when relevant — don't repeat them verbatim every message, but keep them in mind when giving advice.` : ''}
 
 Recent workouts:
 ${recentWorkouts || '  No recent workouts'}

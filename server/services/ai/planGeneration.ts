@@ -403,15 +403,47 @@ function buildPlanMultipliers(
   return { multipliers: [...sampledBuild, ...taperPart], peakMultiplier: peakMult }
 }
 
+// ── Training day helpers ──────────────────────────────────────────────────────
+
+function parseTrainingDays(raw: string): number[] {
+  if (!raw) return []
+  const dayMap: Record<string, number> = {
+    mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 6,
+    monday: 0, tuesday: 1, wednesday: 2, thursday: 3, friday: 4, saturday: 5, sunday: 6,
+  }
+  return [...new Set(
+    raw.split(',')
+      .map(d => dayMap[d.trim().toLowerCase()])
+      .filter((d): d is number => d !== undefined),
+  )].sort((a, b) => a - b)
+}
+
+// Snap `day` to the nearest value in `allowed` (circular week)
+function nearestAllowedDay(day: number, allowed: number[]): number {
+  if (!allowed.length || allowed.includes(day)) return day
+  return allowed.reduce((best, d) => {
+    const dD = Math.min(Math.abs(d - day), 7 - Math.abs(d - day))
+    const dB = Math.min(Math.abs(best - day), 7 - Math.abs(best - day))
+    return dD < dB ? d : best
+  }, allowed[0])
+}
+
+// Find allowed day closest FORWARD from anchor (for placing long ride after long run day)
+function findAdjacentDay(anchor: number, allowed: number[]): number {
+  const others = (allowed.length > 0 ? allowed : [0,1,2,3,4,5,6]).filter(d => d !== anchor)
+  if (!others.length) return (anchor + 1) % 7
+  return others.reduce((best, d) => {
+    const fwdD    = (d    - anchor + 7) % 7
+    const fwdBest = (best - anchor + 7) % 7
+    return fwdD < fwdBest ? d : best
+  }, others[0])
+}
+
 // ── Template-based weekly schedule ───────────────────────────────────────────
 //
-// Returns an ordered list of { disc, type, kmShare, minPerKm } slots.
-// kmShare is a fraction of the weekly volume for that discipline.
-// Slots are placed starting from Monday (day 0), with rest days inserted
-// to honour the "long ride and long run separated by 2+ days" rule.
-//
-// The day indices returned are the absolute 0-6 (Mon-Sun) positions.
-// preferred_long_day shifts where the long ride lands within the week.
+// preferred_long_day = the long RUN day (user's most important session).
+// For multi-discipline athletes, long RIDE goes on the next allowed day after that.
+// Sessions are only placed on days in allowedDays (if provided).
 
 interface Slot {
   disc: 'run' | 'ride' | 'swim'
@@ -437,19 +469,21 @@ function classifyDisciplines(disciplines: string[]): DisciplineSet {
 }
 
 // Returns { day (0-6), slot } pairs for a given daysPerWeek + discipline set.
-// Long ride on longRideDay; long run on longRunDay (always 2+ days away from ride).
 function buildWeekTemplate(
   daysPerWeek: number,
   discSet: DisciplineSet,
-  longDayIdx: number,         // preferred long session day (0-6)
+  longDayIdx: number,         // preferred day — long RUN lands here
   level: FitnessLevel,
-  hasQuality: boolean,        // whether quality sessions are allowed
+  hasQuality: boolean,
+  allowedDays: number[] = [], // empty = no restriction
 ): Array<{ dayIdx: number; slot: Slot }> {
 
-  // For single-discipline athletes the long day is the preferred day.
-  // For triathlon we put the long RIDE on preferred day and long RUN 2 days later.
-  const longRideDay = longDayIdx
-  const longRunDay  = (longDayIdx + 2) % 7
+  // Pool: the days we are allowed to use
+  const pool = allowedDays.length > 0 ? allowedDays : [0,1,2,3,4,5,6]
+
+  // Long RUN on preferred day; long RIDE on the next adjacent allowed day
+  const longRunDay  = nearestAllowedDay(longDayIdx, pool)
+  const longRideDay = findAdjacentDay(longRunDay, pool)
 
   // ----- Single discipline templates -----
   if (discSet === 'run' || discSet === 'ride' || discSet === 'swim') {
@@ -483,13 +517,12 @@ function buildWeekTemplate(
     const total = slots.reduce((s, sl) => s + sl.kmShare, 0)
     slots.forEach(sl => { sl.kmShare /= total })
 
-    // Spread day indices: long day first, then greedy max-gap
-    const dayIdxs = spreadDays(n, longDayIdx)
+    // Spread day indices across allowed days only, starting from longRunDay
+    const dayIdxs = spreadDays(Math.min(n, pool.length), longRunDay, pool)
     return dayIdxs.map((dayIdx, i) => ({ dayIdx, slot: slots[i] }))
   }
 
   // ----- Multi-discipline templates -----
-  // Triathlete (all) or duathlete (run+ride / run+swim / ride+swim)
   const hasRun  = discSet === 'all' || discSet.startsWith('run')  || discSet.endsWith('run')
   const hasRide = discSet === 'all' || discSet.startsWith('ride') || discSet.endsWith('ride')
   const hasSwim = discSet === 'all' || discSet.startsWith('swim') || discSet.endsWith('swim')
@@ -497,94 +530,55 @@ function buildWeekTemplate(
   type Entry = { dayIdx: number; disc: 'run' | 'ride' | 'swim'; type: string; kmShare: number; minPerKm: number }
   const entries: Entry[] = []
 
-  // Templates by daysPerWeek for triathlete (adjust for duathletes by removing swim)
-  // Each entry: [discipline, type, day-offset-from-Monday]
-  // We always anchor long-ride on longRideDay and long-run on longRunDay.
+  // longRunDay  = user's preferred long day (anchor A — long RUN)
+  // longRideDay = next adjacent allowed day (anchor B — long RIDE)
+  // nonAnchor   = all pool days except the two anchors
+
+  const nonAnchor = pool.filter(d => d !== longRunDay && d !== longRideDay)
 
   if (daysPerWeek <= 3) {
-    // 3 days: one of each (swim optional if no swim disc)
-    const plan: Array<[string, string, number]> = []
-    if (hasSwim) plan.push(['swim', 'base',  0])
-    if (hasRide) plan.push(['ride', 'long',  longRideDay - (longRideDay > 2 ? 2 : 0)])
-    if (hasRun)  plan.push(['run',  'long',  longRunDay])
-    // Fill to 3 if short
-    const actual = plan.slice(0, 3)
-    actual.forEach(([disc, type, dayIdx]) => {
-      if ((disc === 'run'  && !hasRun)  ||
-          (disc === 'ride' && !hasRide) ||
-          (disc === 'swim' && !hasSwim)) return
-      entries.push({ dayIdx, disc: disc as 'run'|'ride'|'swim', type, kmShare: 0, minPerKm: disc === 'run' ? 6.5 : disc === 'ride' ? 2.2 : 30 })
-    })
+    // 3 days: swim + long run + long ride (or what's available)
+    const fillers = pickSpread(nonAnchor, 1, [longRunDay, longRideDay])
+    if (hasSwim) entries.push({ dayIdx: fillers[0] ?? nonAnchor[0] ?? (longRunDay + 3) % 7, disc: 'swim', type: 'base', kmShare: 0, minPerKm: 30 })
+    if (hasRide) entries.push({ dayIdx: longRideDay, disc: 'ride', type: 'long', kmShare: 0, minPerKm: 2.2 })
+    if (hasRun)  entries.push({ dayIdx: longRunDay,  disc: 'run',  type: 'long', kmShare: 0, minPerKm: 6.5 })
   } else if (daysPerWeek === 4) {
-    // Day 0: Swim easy / or ride easy if no swim
-    // Day 2: Run easy
-    // Day 4: Ride long  ← longRideDay
-    // Day 6: Run long   ← longRunDay
-    if (hasSwim) entries.push({ dayIdx: (longRideDay + 4) % 7, disc: 'swim', type: 'base',  kmShare: 0, minPerKm: 30 })
-    else if (hasRide) entries.push({ dayIdx: (longRideDay + 5) % 7, disc: 'ride', type: 'easy', kmShare: 0, minPerKm: 2.2 })
-    if (hasRun)  entries.push({ dayIdx: (longRideDay + 2) % 7, disc: 'run',  type: 'easy',  kmShare: 0, minPerKm: 6.5 })
-    if (hasRide) entries.push({ dayIdx: longRideDay,            disc: 'ride', type: 'long',  kmShare: 0, minPerKm: 2.2 })
-    if (hasRun)  entries.push({ dayIdx: longRunDay,             disc: 'run',  type: 'long',  kmShare: 0, minPerKm: 6.5 })
+    const fillers = pickSpread(nonAnchor, 2, [longRunDay, longRideDay])
+    if (hasSwim) entries.push({ dayIdx: fillers[0] ?? nonAnchor[0] ?? 0, disc: 'swim', type: 'base',  kmShare: 0, minPerKm: 30 })
+    else if (hasRide) entries.push({ dayIdx: fillers[0] ?? nonAnchor[0] ?? 0, disc: 'ride', type: 'easy', kmShare: 0, minPerKm: 2.2 })
+    if (hasRun)  entries.push({ dayIdx: fillers[1] ?? nonAnchor[1] ?? 2, disc: 'run',  type: 'easy',  kmShare: 0, minPerKm: 6.5 })
+    if (hasRide) entries.push({ dayIdx: longRideDay, disc: 'ride', type: 'long',  kmShare: 0, minPerKm: 2.2 })
+    if (hasRun)  entries.push({ dayIdx: longRunDay,  disc: 'run',  type: 'long',  kmShare: 0, minPerKm: 6.5 })
   } else if (daysPerWeek === 5) {
-    // Day A: Swim easy
-    // Day B: Run easy
-    // Day C: Ride tempo/easy
-    // Day D: Swim intervals (if tri) or Run tempo (if no swim)
-    // Day E: Ride long (longRideDay)
-    // Day F: Run long  (longRunDay)
-    // Anchor E and F, spread A-D around them
-    const anchor1 = longRideDay
-    const anchor2 = longRunDay
-    const other: number[] = []
-    for (let d = 0; d < 7; d++) {
-      if (d !== anchor1 && d !== anchor2) other.push(d)
-    }
-    // Pick 3 non-anchor days, maximally spread from anchors
-    const spread3 = pickSpread(other, 3, [anchor1, anchor2])
-
+    const spread3 = pickSpread(nonAnchor, 3, [longRunDay, longRideDay])
     if (hasSwim) {
-      entries.push({ dayIdx: spread3[0], disc: 'swim', type: 'base',     kmShare: 0, minPerKm: 30 })
-      entries.push({ dayIdx: spread3[2], disc: 'swim', type: 'interval', kmShare: 0, minPerKm: 30 })
+      entries.push({ dayIdx: spread3[0] ?? nonAnchor[0] ?? 0, disc: 'swim', type: 'base',     kmShare: 0, minPerKm: 30 })
+      entries.push({ dayIdx: spread3[2] ?? nonAnchor[2] ?? 2, disc: 'swim', type: 'interval', kmShare: 0, minPerKm: 30 })
     } else if (hasRun) {
-      entries.push({ dayIdx: spread3[0], disc: 'run', type: 'easy',  kmShare: 0, minPerKm: 6.5 })
-      entries.push({ dayIdx: spread3[2], disc: 'run', type: hasQuality ? 'tempo' : 'easy', kmShare: 0, minPerKm: 5.5 })
+      entries.push({ dayIdx: spread3[0] ?? nonAnchor[0] ?? 0, disc: 'run', type: 'easy',  kmShare: 0, minPerKm: 6.5 })
+      entries.push({ dayIdx: spread3[2] ?? nonAnchor[2] ?? 2, disc: 'run', type: hasQuality ? 'tempo' : 'easy', kmShare: 0, minPerKm: 5.5 })
     }
-    if (hasRun)  entries.push({ dayIdx: spread3[1], disc: 'run',  type: 'easy',  kmShare: 0, minPerKm: 6.5 })
-    if (hasRide) entries.push({ dayIdx: anchor1,    disc: 'ride', type: 'long',  kmShare: 0, minPerKm: 2.2 })
-    if (hasRun)  entries.push({ dayIdx: anchor2,    disc: 'run',  type: 'long',  kmShare: 0, minPerKm: 6.5 })
+    if (hasRun)  entries.push({ dayIdx: spread3[1] ?? nonAnchor[1] ?? 1, disc: 'run',  type: 'easy', kmShare: 0, minPerKm: 6.5 })
+    if (hasRide) entries.push({ dayIdx: longRideDay, disc: 'ride', type: 'long', kmShare: 0, minPerKm: 2.2 })
+    if (hasRun)  entries.push({ dayIdx: longRunDay,  disc: 'run',  type: 'long', kmShare: 0, minPerKm: 6.5 })
   } else {
-    // 6 days: full triathlete week
-    // Mon: Swim easy
-    // Tue: Run easy
-    // Wed: Ride tempo
-    // Thu: Run tempo/intervals
-    // Fri: Swim intervals
-    // Sat: Ride long   ← longRideDay
-    // Sun: Run long    ← longRunDay
-    // Anchor long ride + long run, fill the 4 remaining slots
-    const anchor1 = longRideDay
-    const anchor2 = longRunDay
-    const others: number[] = []
-    for (let d = 0; d < 7; d++) {
-      if (d !== anchor1 && d !== anchor2) others.push(d)
-    }
-    const spread4 = pickSpread(others, 4, [anchor1, anchor2])
-
+    // 6+ days: full week
+    const spread4 = pickSpread(nonAnchor, 4, [longRunDay, longRideDay])
     if (hasSwim) {
-      entries.push({ dayIdx: spread4[0], disc: 'swim', type: 'base',     kmShare: 0, minPerKm: 30 })
-      entries.push({ dayIdx: spread4[3], disc: 'swim', type: 'interval', kmShare: 0, minPerKm: 30 })
+      entries.push({ dayIdx: spread4[0] ?? nonAnchor[0] ?? 0, disc: 'swim', type: 'base',     kmShare: 0, minPerKm: 30 })
+      entries.push({ dayIdx: spread4[3] ?? nonAnchor[3] ?? 3, disc: 'swim', type: 'interval', kmShare: 0, minPerKm: 30 })
     }
     if (hasRun) {
-      entries.push({ dayIdx: spread4[1], disc: 'run',  type: 'easy',  kmShare: 0, minPerKm: 6.5 })
-      entries.push({ dayIdx: spread4[2], disc: 'run',  type: hasQuality ? 'tempo' : 'easy', kmShare: 0, minPerKm: 5.5 })
+      entries.push({ dayIdx: spread4[1] ?? nonAnchor[1] ?? 1, disc: 'run', type: 'easy',  kmShare: 0, minPerKm: 6.5 })
+      entries.push({ dayIdx: spread4[2] ?? nonAnchor[2] ?? 2, disc: 'run', type: hasQuality ? 'tempo' : 'easy', kmShare: 0, minPerKm: 5.5 })
     }
-    if (hasRide) entries.push({ dayIdx: anchor1, disc: 'ride', type: 'long', kmShare: 0, minPerKm: 2.2 })
-    if (hasRun)  entries.push({ dayIdx: anchor2, disc: 'run',  type: 'long', kmShare: 0, minPerKm: 6.5 })
+    if (hasRide) entries.push({ dayIdx: longRideDay, disc: 'ride', type: 'long', kmShare: 0, minPerKm: 2.2 })
+    if (hasRun)  entries.push({ dayIdx: longRunDay,  disc: 'run',  type: 'long', kmShare: 0, minPerKm: 6.5 })
 
-    // Add a non-long ride if we still have room
+    // Add non-long ride if there's still a free allowed day
     const used = new Set(entries.map(e => e.dayIdx))
-    if (hasRide && entries.length < daysPerWeek) {
-      const rideDay = others.find(d => !used.has(d))
+    if (hasRide && entries.length < Math.min(daysPerWeek, pool.length)) {
+      const rideDay = nonAnchor.find(d => !used.has(d))
       if (rideDay !== undefined) {
         entries.push({ dayIdx: rideDay, disc: 'ride', type: hasQuality ? 'tempo' : 'easy', kmShare: 0, minPerKm: 2.2 })
       }
@@ -620,20 +614,22 @@ function assignShares(entries: Array<{ type: string; kmShare: number }>) {
   entries.forEach((e, i) => { e.kmShare = weights[i] / total })
 }
 
-// Spread n days across 0-6 starting from preferred, maximally separated
-function spreadDays(n: number, preferred: number): number[] {
-  const result: number[] = [preferred]
-  for (let i = 1; i < n; i++) {
-    let best = -1, bestScore = -1
-    for (let d = 0; d < 7; d++) {
-      if (result.includes(d)) continue
+// Spread n days starting from preferred, maximally separated; respects allowed days pool
+function spreadDays(n: number, preferred: number, pool: number[] = [0,1,2,3,4,5,6]): number[] {
+  const anchor = nearestAllowedDay(preferred, pool)
+  const result: number[] = [anchor]
+  const remaining = pool.filter(d => d !== anchor)
+  while (result.length < n && remaining.length > 0) {
+    let best = remaining[0], bestScore = -1
+    for (const d of remaining) {
       const minDist = Math.min(...result.map(r => {
         const diff = Math.abs(r - d)
         return Math.min(diff, 7 - diff)
       }))
       if (minDist > bestScore) { bestScore = minDist; best = d }
     }
-    if (best !== -1) result.push(best)
+    result.push(best)
+    remaining.splice(remaining.indexOf(best), 1)
   }
   return result
 }
@@ -669,7 +665,12 @@ function buildBaseWeek(ctx: UserContext, peakMultiplier: number, phase: PlanPhas
   const level       = ((preferences.fitness_level as string) ?? 'intermediate') as FitnessLevel
   const daysPerWeek = Math.min(Number(preferences.training_days_per_week) || 4, 7)
   const longDayRaw  = (preferences.preferred_long_day as string ?? 'Saturday')
-  const longDayIdx  = DAY_INDEX[longDayRaw.toLowerCase()] ?? 5
+  const rawLongIdx  = DAY_INDEX[longDayRaw.toLowerCase()] ?? 5
+
+  // Parse the specific days the user is available to train
+  const allowedDays = parseTrainingDays(preferences.training_days as string ?? '')
+  const longDayIdx  = allowedDays.length > 0 ? nearestAllowedDay(rawLongIdx, allowedDays) : rawLongIdx
+
   const isReturn    = training_phase === 'return'
   const goalType    = ctx.goal?.event_type ?? (preferences.goal_event_type as string ?? '')
   const caps        = getCapsForGoal(level, goalType)
@@ -707,7 +708,9 @@ function buildBaseWeek(ctx: UserContext, peakMultiplier: number, phase: PlanPhas
   console.log('[PLAN] ─────────────────────────')
 
   const discSet = classifyDisciplines([...allowedDiscs])
-  const template = buildWeekTemplate(daysPerWeek, discSet, longDayIdx, level, hasQuality)
+  const template = buildWeekTemplate(daysPerWeek, discSet, longDayIdx, level, hasQuality, allowedDays)
+  console.log('[PLAN] ALLOWED_DAYS:      ', allowedDays.length > 0 ? allowedDays.map(d => ALL_DAYS[d]) : 'all')
+  console.log('[PLAN] LONG_RUN_DAY:      ', ALL_DAYS[longDayIdx])
 
   const sessions: AiSession[] = []
 

@@ -30,23 +30,34 @@ function getDefaultPlanStart(): string {
 interface Props {
   disciplines: Discipline[]
   phase: TrainingPhase
+  initialEventType?: string
+  initialTargetDate?: string
+  initialStats?: Record<string, string>
+  initialSelectedDays?: string[]
+  initialCoachNote?: string
   onNext: (data: {
     eventType: string
     targetDate: string
     planStartDate: string
     stats: Record<string, string>
     coachNote: string
+    selectedDays: string[]
   }) => void
   onBack: () => void
 }
 
-export default function Step2GoalStats({ disciplines, phase, onNext, onBack }: Props) {
-  const [eventType, setEventType] = useState('')
-  const [targetDate, setTargetDate] = useState('')
+export default function Step2GoalStats({
+  disciplines, phase,
+  initialEventType = '', initialTargetDate = '',
+  initialStats = {}, initialSelectedDays = [], initialCoachNote = '',
+  onNext, onBack,
+}: Props) {
+  const [eventType, setEventType] = useState(initialEventType)
+  const [targetDate, setTargetDate] = useState(initialTargetDate)
   const [planStartDate, setPlanStartDate] = useState(getDefaultPlanStart)
-  const [stats, setStats] = useState<Record<string, string>>({})
-  const [coachNote, setCoachNote] = useState('')
-  const [selectedDays, setSelectedDays] = useState<string[]>([])
+  const [stats, setStats] = useState<Record<string, string>>(initialStats)
+  const [coachNote, setCoachNote] = useState(initialCoachNote)
+  const [selectedDays, setSelectedDays] = useState<string[]>(initialSelectedDays)
 
   function toggleDay(day: string) {
     setSelectedDays(prev =>
@@ -284,8 +295,9 @@ export default function Step2GoalStats({ disciplines, phase, onNext, onBack }: P
             eventType,
             targetDate,
             planStartDate,
-            stats: { ...stats, training_days: selectedDays.join(',') },
+            stats,
             coachNote,
+            selectedDays,
           })}
           disabled={!canContinue}
           className="flex-1 py-4 bg-black text-white font-semibold rounded-xl disabled:opacity-40"

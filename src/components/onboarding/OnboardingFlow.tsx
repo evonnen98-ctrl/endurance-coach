@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { supabase, DEMO_USER_ID } from '../../lib/supabase'
 import type { Discipline, TrainingPhase } from '../../types'
@@ -22,6 +22,7 @@ interface OnboardingData {
   planStartDate: string
   stats: Record<string, string>
   coachNote: string
+  selectedDays: string[]
 }
 
 async function waitForServer(maxMs = 55_000): Promise<void> {
@@ -40,6 +41,7 @@ export default function OnboardingFlow({ existingUser }: Props) {
   const [step, setStep] = useState(1)
   const [building, setBuilding] = useState(false)
   const [buildMessage, setBuildMessage] = useState<string | null>(null)
+  const [existingGoal, setExistingGoal] = useState<{ event_type?: string; target_date?: string } | null>(null)
 
   // Pre-fill from existing user when rebuilding
   const existingPrefs = (existingUser?.preferences ?? {}) as Record<string, string | number>
@@ -51,6 +53,15 @@ export default function OnboardingFlow({ existingUser }: Props) {
     preferredLongDay:    (existingPrefs.preferred_long_day as string)      ?? undefined,
   })
 
+  // Fetch existing goal for pre-fill in step 2
+  useEffect(() => {
+    if (!existingUser) return
+    supabase
+      .from('goals').select('event_type,target_date').eq('user_id', DEMO_USER_ID).eq('status', 'active')
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      .then(({ data: g }) => { if (g) setExistingGoal(g) })
+  }, [existingUser])
+
   function next(patch: Partial<OnboardingData>) {
     setData(prev => ({ ...prev, ...patch }))
     setStep(s => s + 1)
@@ -61,7 +72,7 @@ export default function OnboardingFlow({ existingUser }: Props) {
     setStep(s => s - 1)
   }
 
-  async function finish(patch: { eventType: string; targetDate: string; planStartDate: string; stats: Record<string, string>; coachNote: string }) {
+  async function finish(patch: { eventType: string; targetDate: string; planStartDate: string; stats: Record<string, string>; coachNote: string; selectedDays: string[] }) {
     const final = { ...data, ...patch } as OnboardingData
 
     setBuildMessage('Connecting to your coach…')
@@ -75,12 +86,15 @@ export default function OnboardingFlow({ existingUser }: Props) {
     if (final.stats?.ride_speed)         preferences.ride_speed_kmh        = parseFloat(final.stats.ride_speed)
     if (final.stats?.swim_weekly_km)     preferences.swim_weekly_km        = parseFloat(final.stats.swim_weekly_km)
     if (final.stats?.swim_pace_per_100m) preferences.swim_pace_per_100m    = final.stats.swim_pace_per_100m
-    if (final.stats?.training_days)      preferences.training_days         = final.stats.training_days
     if (final.fitnessLevel)              preferences.fitness_level          = final.fitnessLevel
     if (final.trainingDaysPerWeek)       preferences.training_days_per_week = final.trainingDaysPerWeek
     if (final.preferredLongDay)          preferences.preferred_long_day     = final.preferredLongDay
     if (final.eventType)                 preferences.goal_event_type        = final.eventType
     if (final.planStartDate)             preferences.plan_start_date        = final.planStartDate
+    // Save specific training days from the day-picker (not the free-text stats field)
+    const selectedDays = patch.selectedDays ?? []
+    preferences.training_days = selectedDays.join(',')
+    if (selectedDays.length > 0) preferences.training_days_per_week = selectedDays.length
 
     // Delete any existing plans and their sessions so a clean plan is generated
     const { data: oldPlans } = await supabase
@@ -196,6 +210,18 @@ export default function OnboardingFlow({ existingUser }: Props) {
           <Step2GoalStats
             disciplines={data.disciplines ?? []}
             phase={data.phase!}
+            initialEventType={existingGoal?.event_type ?? (existingPrefs.goal_event_type as string) ?? ''}
+            initialTargetDate={existingGoal?.target_date ?? ''}
+            initialStats={{
+              run_weekly_km:    existingPrefs.run_weekly_km   != null ? String(existingPrefs.run_weekly_km)   : '',
+              run_pace:         (existingPrefs.run_pace_easy  as string) ?? '',
+              ride_weekly_km:   existingPrefs.ride_weekly_km  != null ? String(existingPrefs.ride_weekly_km)  : '',
+              ride_speed:       existingPrefs.ride_speed_kmh  != null ? String(existingPrefs.ride_speed_kmh)  : '',
+              swim_weekly_km:   existingPrefs.swim_weekly_km  != null ? String(existingPrefs.swim_weekly_km)  : '',
+              swim_pace_per_100m: (existingPrefs.swim_pace_per_100m as string) ?? '',
+            }}
+            initialSelectedDays={(existingPrefs.training_days as string ?? '').split(',').filter(Boolean)}
+            initialCoachNote={existingUser?.coach_notes_freetext ?? ''}
             onNext={finish}
             onBack={back}
           />

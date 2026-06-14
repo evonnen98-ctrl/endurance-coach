@@ -59,6 +59,7 @@ ATHLETE: ${context.user.name}
 WEEK: ${weekNumber} of 12 | ${format(weekStart, 'MMM d')} – ${format(weekEnd, 'MMM d')}
 GOAL: ${context.goal?.event_type ?? 'fitness'}, ${context.goal?.days_until_event ?? '?'} days out
 COMPLETION: ${sessionsCompleted} completed, ${sessionsMissed} missed
+${context.user.coach_notes_freetext ? `ATHLETE PREFERENCES: "${context.user.coach_notes_freetext}" — reference these when they are relevant to this week's observations.` : ''}
 
 SESSIONS:
 ${sessionsData.map((s: any) => `- ${s.discipline.toUpperCase()} ${s.title}: ${s.status} | Planned: ${s.planned_km ?? '?'}km/${s.planned_min ?? '?'}min ${s.effort_zone ?? ''} | Actual: ${s.actual_km ?? '?'}km/${s.actual_min ?? '?'}min | RPE: ${s.rpe ?? '?'} | Note: "${s.note ?? 'none'}"`).join('\n')}
