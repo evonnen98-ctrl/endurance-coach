@@ -3,17 +3,17 @@ import { Home, Calendar, TrendingUp, FileText, Clock } from 'lucide-react'
 import clsx from 'clsx'
 
 const tabs = [
-  { to: '/today', label: 'TODAY', Icon: Home },
-  { to: '/plan', label: 'PLAN', Icon: Calendar },
+  { to: '/today',    label: 'TODAY',    Icon: Home },
+  { to: '/plan',     label: 'PLAN',     Icon: Calendar },
   { to: '/progress', label: 'PROGRESS', Icon: TrendingUp },
-  { to: '/notes', label: 'NOTES', Icon: FileText },
-  { to: '/history', label: 'HISTORY', Icon: Clock },
+  { to: '/notes',    label: 'NOTES',    Icon: FileText },
+  { to: '/history',  label: 'HISTORY',  Icon: Clock },
 ]
 
 export default function BottomNav() {
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 safe-bottom z-40">
-      <div className="flex">
+      <div className="max-w-[900px] mx-auto flex">
         {tabs.map(({ to, label, Icon }) => (
           <NavLink
             key={to}
