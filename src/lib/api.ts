@@ -49,13 +49,4 @@ export const api = {
     message: string
     history: Array<{ role: 'user' | 'assistant'; content: string }>
   }) => post<{ reply: string }>('/ai/coach-chat', params),
-
-  stravaStatus: () =>
-    fetch('/api/strava/status').then(r => r.json()) as Promise<import('../types').StravaConnection>,
-
-  stravaImport: (userId: string) =>
-    post<{ imported: number; skipped: number; total: number }>('/strava/import', { userId }),
-
-  stravaDisconnect: () =>
-    fetch('/api/strava/disconnect', { method: 'DELETE' }).then(r => r.json()),
 }

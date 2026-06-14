@@ -123,21 +123,22 @@ create table if not exists coach_notes (
   unique (user_id, week_number)
 );
 
-create table if not exists strava_connections (
-  id             uuid primary key default gen_random_uuid(),
-  user_id        uuid not null references users(id) on delete cascade,
-  athlete_id     bigint not null,
-  athlete_name   text,
-  athlete_photo_url text,
-  access_token   text not null,
-  refresh_token  text not null,
-  expires_at     timestamptz not null,
-  scope          text,
-  created_at     timestamptz not null default now(),
-  updated_at     timestamptz not null default now(),
-  unique (user_id),
-  unique (athlete_id)
-);
+-- strava_connections table commented out — Strava integration removed, add back when re-integrating
+-- create table if not exists strava_connections (
+--   id             uuid primary key default gen_random_uuid(),
+--   user_id        uuid not null references users(id) on delete cascade,
+--   athlete_id     bigint not null,
+--   athlete_name   text,
+--   athlete_photo_url text,
+--   access_token   text not null,
+--   refresh_token  text not null,
+--   expires_at     timestamptz not null,
+--   scope          text,
+--   created_at     timestamptz not null default now(),
+--   updated_at     timestamptz not null default now(),
+--   unique (user_id),
+--   unique (athlete_id)
+-- );
 
 create unique index if not exists workout_logs_external_id_idx
   on workout_logs (user_id, external_id)
@@ -150,7 +151,7 @@ alter table sessions            disable row level security;
 alter table workout_logs        disable row level security;
 alter table checkins            disable row level security;
 alter table coach_notes         disable row level security;
-alter table strava_connections  disable row level security;
+-- alter table strava_connections  disable row level security;
 
 grant all on all tables in schema public to anon;
 grant all on all sequences in schema public to anon;

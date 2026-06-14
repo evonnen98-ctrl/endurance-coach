@@ -5,7 +5,6 @@ import path from 'path'
 import { existsSync } from 'fs'
 import { fileURLToPath } from 'url'
 import aiRouter from './routes/ai.js'
-import stravaRouter from './routes/strava.js'
 import { runMigrations } from './lib/migrate.js'
 
 const app = express()
@@ -18,7 +17,6 @@ app.use(cors({ origin: /^http:\/\/localhost:\d+$/ }))
 app.use(express.json())
 
 app.use('/api/ai', aiRouter)
-app.use('/api/strava', stravaRouter)
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })

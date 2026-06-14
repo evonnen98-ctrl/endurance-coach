@@ -84,7 +84,7 @@ export interface WorkoutLog {
   rpe?: number
   user_note?: string
   coach_response?: string
-  source: 'manual' | 'garmin' | 'strava' | 'apple_health'
+  source: 'manual' | 'garmin' | 'apple_health'
   external_id?: string
   average_hr?: number
   average_pace_per_km?: string
@@ -135,7 +135,7 @@ export interface CoachNote {
   created_at: string
 }
 
-// API request/response types
+// API request/response types — StravaConnection removed (Strava integration stripped out)
 export interface GeneratePlanRequest {
   userId: string
 }
@@ -169,8 +169,3 @@ export interface GoalCompletionRequest {
   goalId: string
 }
 
-export interface StravaConnection {
-  connected: boolean
-  athlete_name?: string
-  athlete_photo_url?: string
-}
