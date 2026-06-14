@@ -653,6 +653,31 @@ function pickSpread(candidates: number[], n: number, anchors: number[]): number[
   return result
 }
 
+// ── Coach notes constraint parser ─────────────────────────────────────────────
+
+function parseCoachNotes(notes: string): {
+  weekdayMaxMin?: number
+  longRunDayOverride?: number
+  avoidHighImpactRun?: boolean
+} {
+  if (!notes?.trim()) return {}
+  const lower = notes.toLowerCase()
+  const result: { weekdayMaxMin?: number; longRunDayOverride?: number; avoidHighImpactRun?: boolean } = {}
+
+  const timeMatch = lower.match(/(?:under|less than|max(?:imum)?\s*of?|no more than)\s+(\d+)\s*min/)
+  if (timeMatch) result.weekdayMaxMin = parseInt(timeMatch[1])
+
+  const longRunMatch = lower.match(/long\s+runs?\s+on\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)s?/)
+  if (longRunMatch) {
+    const key = longRunMatch[1].replace(/s$/, '')
+    if (DAY_INDEX[key] !== undefined) result.longRunDayOverride = DAY_INDEX[key]
+  }
+
+  if (/knee|ankle|shin|calf|plantar|achilles/.test(lower)) result.avoidHighImpactRun = true
+
+  return result
+}
+
 // ── Base week construction ────────────────────────────────────────────────────
 
 function buildBaseWeek(ctx: UserContext, peakMultiplier: number, phase: PlanPhase): AiSession[] {
@@ -669,7 +694,17 @@ function buildBaseWeek(ctx: UserContext, peakMultiplier: number, phase: PlanPhas
 
   // Parse the specific days the user is available to train
   const allowedDays = parseTrainingDays(preferences.training_days as string ?? '')
-  const longDayIdx  = allowedDays.length > 0 ? nearestAllowedDay(rawLongIdx, allowedDays) : rawLongIdx
+  let longDayIdx    = allowedDays.length > 0 ? nearestAllowedDay(rawLongIdx, allowedDays) : rawLongIdx
+
+  // Coach notes take priority: override long run day if athlete specified one
+  const noteConstraints = parseCoachNotes(ctx.user.coach_notes_freetext ?? '')
+  if (noteConstraints.longRunDayOverride !== undefined) {
+    const override = noteConstraints.longRunDayOverride
+    if (allowedDays.length === 0 || allowedDays.includes(override)) {
+      longDayIdx = override
+      console.log('[PLAN] NOTES: long run day overridden to', ALL_DAYS[override])
+    }
+  }
 
   const isReturn    = training_phase === 'return'
   const goalType    = ctx.goal?.event_type ?? (preferences.goal_event_type as string ?? '')
@@ -743,15 +778,42 @@ function buildBaseWeek(ctx: UserContext, peakMultiplier: number, phase: PlanPhas
     })
   }
 
+  // Apply coach note hard constraints before sorting
+  if (noteConstraints.weekdayMaxMin) {
+    for (const s of sessions) {
+      const di = DAY_INDEX[s.day.toLowerCase()] ?? 0
+      if (di <= 4 && s.min > noteConstraints.weekdayMaxMin) {
+        const ratio = noteConstraints.weekdayMaxMin / s.min
+        s.min = noteConstraints.weekdayMaxMin
+        s.km  = Math.max(1, Math.round(s.km * ratio))
+      }
+    }
+    console.log('[PLAN] NOTES: weekday sessions capped to', noteConstraints.weekdayMaxMin, 'min')
+  }
+  if (noteConstraints.avoidHighImpactRun) {
+    for (const s of sessions) {
+      if (s.disc === 'run' && (s.type === 'interval' || s.type === 'tempo')) s.type = 'easy'
+    }
+    console.log('[PLAN] NOTES: high-impact run sessions → easy (injury avoidance)')
+  }
+
   const sorted = sessions.sort((a, b) =>
     (DAY_INDEX[a.day.toLowerCase()] ?? 0) - (DAY_INDEX[b.day.toLowerCase()] ?? 0),
   )
 
-  console.log('[PLAN] Base week:', sorted.map(s => `${s.day} ${s.disc} ${s.type} ${s.km}km ${s.min}min`))
-  console.log('[PLAN] Disciplines in plan:', [...new Set(sorted.map(s => s.disc))])
-  console.log('[PLAN] Total km W1:', sorted.reduce((sum, s) => sum + s.km, 0))
+  // Hard constraint: remove any sessions that landed outside allowed days
+  const result = allowedDays.length > 0
+    ? sorted.filter(s => allowedDays.includes(DAY_INDEX[s.day.toLowerCase()] ?? -1))
+    : sorted
+  if (result.length < sorted.length) {
+    console.log('[PLAN] HARD_CONSTRAINT: removed', sorted.length - result.length, 'sessions on non-allowed days')
+  }
 
-  return sorted
+  console.log('[PLAN] Base week:', result.map(s => `${s.day} ${s.disc} ${s.type} ${s.km}km ${s.min}min`))
+  console.log('[PLAN] Disciplines in plan:', [...new Set(result.map(s => s.disc))])
+  console.log('[PLAN] Total km W1:', result.reduce((sum, s) => sum + s.km, 0))
+
+  return result
 }
 
 // ── Week expansion ────────────────────────────────────────────────────────────

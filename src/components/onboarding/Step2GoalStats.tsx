@@ -70,7 +70,13 @@ export default function Step2GoalStats({
 
   const set = (key: string, val: string) => setStats(s => ({ ...s, [key]: val }))
 
-  const canContinue = !isRace || eventType !== ''
+  const hasVolumes = disciplines.every(d =>
+    d === 'run'  ? (parseFloat(stats.run_weekly_km  ?? '') || 0) > 0
+    : d === 'ride' ? (parseFloat(stats.ride_weekly_km ?? '') || 0) > 0
+    : d === 'swim' ? (parseFloat(stats.swim_weekly_km ?? '') || 0) > 0
+    : true
+  )
+  const canContinue = (isRace ? (eventType !== '' && !!targetDate) : true) && hasVolumes
 
   return (
     <div className="px-6 pb-8">
@@ -102,7 +108,7 @@ export default function Step2GoalStats({
             ))}
           </div>
           <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">
-            Target race date (optional)
+            Target race date
           </label>
           <input
             type="date"
@@ -158,7 +164,7 @@ export default function Step2GoalStats({
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
-                    Easy pace (min/km)
+                    Easy pace (min/km) <span className="normal-case font-normal">(optional)</span>
                   </label>
                   <input
                     type="text"
@@ -190,7 +196,7 @@ export default function Step2GoalStats({
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
-                    Avg speed (km/h)
+                    Avg speed (km/h) <span className="normal-case font-normal">(optional)</span>
                   </label>
                   <input
                     type="number"
@@ -222,7 +228,7 @@ export default function Step2GoalStats({
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">
-                    Comfortable 100m pace
+                    Comfortable 100m pace <span className="normal-case font-normal">(optional)</span>
                   </label>
                   <input
                     type="text"
@@ -240,7 +246,7 @@ export default function Step2GoalStats({
 
       {/* ── Training days ── */}
       <section className="mb-8">
-        <h2 className="text-lg font-semibold mb-1">Which days can you train?</h2>
+        <h2 className="text-lg font-semibold mb-1">Which days can you train? <span className="text-sm font-normal text-gray-400">(optional)</span></h2>
         <p className="text-gray-500 text-sm mb-4">Select all that apply — your plan will respect these.</p>
         <div className="flex gap-2 flex-wrap">
           {DAYS.map(day => (
@@ -273,7 +279,7 @@ export default function Step2GoalStats({
 
       {/* ── Coach note ── */}
       <section className="mb-8">
-        <h2 className="text-lg font-semibold mb-1">Anything your coach should know?</h2>
+        <h2 className="text-lg font-semibold mb-1">Anything your coach should know? <span className="text-sm font-normal text-gray-400">(optional)</span></h2>
         <textarea
           rows={3}
           placeholder="Training preferences, injury history, sessions you prefer to do in the morning…"

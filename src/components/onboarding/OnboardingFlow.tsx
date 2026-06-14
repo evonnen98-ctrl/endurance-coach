@@ -86,6 +86,7 @@ export default function OnboardingFlow({ existingUser }: Props) {
     if (final.stats?.ride_speed)         preferences.ride_speed_kmh        = parseFloat(final.stats.ride_speed)
     if (final.stats?.swim_weekly_km)     preferences.swim_weekly_km        = parseFloat(final.stats.swim_weekly_km)
     if (final.stats?.swim_pace_per_100m) preferences.swim_pace_per_100m    = final.stats.swim_pace_per_100m
+    if (final.coachNote)                 preferences.coach_notes            = final.coachNote
     if (final.fitnessLevel)              preferences.fitness_level          = final.fitnessLevel
     if (final.trainingDaysPerWeek)       preferences.training_days_per_week = final.trainingDaysPerWeek
     if (final.preferredLongDay)          preferences.preferred_long_day     = final.preferredLongDay

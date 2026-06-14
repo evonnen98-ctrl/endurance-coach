@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { X, RefreshCw } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { supabase, DEMO_USER_ID } from '../../lib/supabase'
@@ -16,9 +16,12 @@ export default function ProfileDrawer({ user, onClose }: Props) {
   const [coachNote, setCoachNote]   = useState(user.coach_notes_freetext ?? '')
   const [saving, setSaving]         = useState(false)
   const [confirmRebuild, setConfirmRebuild] = useState(false)
+  const [notesSaved, setNotesSaved] = useState(false)
+  const originalNote = useRef(user.coach_notes_freetext ?? '')
 
   async function save() {
     setSaving(true)
+    const noteChanged = coachNote !== originalNote.current
     await supabase.from('users').update({
       name,
       injury_notes:         injuryNotes || null,
@@ -27,7 +30,12 @@ export default function ProfileDrawer({ user, onClose }: Props) {
     }).eq('id', DEMO_USER_ID)
     await queryClient.invalidateQueries({ queryKey: ['user'] })
     setSaving(false)
-    onClose()
+    if (noteChanged) {
+      originalNote.current = coachNote
+      setNotesSaved(true)
+    } else {
+      onClose()
+    }
   }
 
   async function handleRebuild() {
@@ -119,6 +127,27 @@ export default function ProfileDrawer({ user, onClose }: Props) {
           >
             {saving ? 'Saving…' : 'Save changes'}
           </button>
+
+          {notesSaved && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <p className="text-sm font-semibold text-amber-900 mb-1">Notes updated.</p>
+              <p className="text-sm text-amber-700 mb-3">Would you like to rebuild your plan to reflect these changes?</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={onClose}
+                  className="flex-1 py-2.5 border border-amber-300 text-amber-800 text-sm font-semibold rounded-xl"
+                >
+                  Not now
+                </button>
+                <button
+                  onClick={() => setConfirmRebuild(true)}
+                  className="flex-1 py-2.5 bg-amber-700 text-white text-sm font-semibold rounded-xl"
+                >
+                  Rebuild plan
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Rebuild plan */}
           <div className="border-t border-gray-100 pt-5">
