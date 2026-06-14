@@ -1,10 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { addDays, format } from 'date-fns'
 import type { UserContext } from '../userContext.js'
 import { supabase } from '../../lib/supabase.js'
 
-const client = new Anthropic()
-const MODEL = 'claude-haiku-4-5-20251001'
+const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
 
 const DAY_INDEX: Record<string, number> = {
   mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 6,
@@ -18,25 +16,6 @@ interface AiSession {
   type: string
   km: number
   min: number
-}
-
-function closeJson(text: string): string {
-  const lastClose = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'))
-  if (lastClose === -1) return text
-  let trimmed = text.slice(0, lastClose + 1)
-  let depth = 0
-  let inStr = false
-  let esc = false
-  for (const c of trimmed) {
-    if (esc)              { esc = false; continue }
-    if (c === '\\' && inStr) { esc = true; continue }
-    if (c === '"')           { inStr = !inStr; continue }
-    if (inStr) continue
-    if (c === '{' || c === '[') depth++
-    else if (c === '}' || c === ']') depth--
-  }
-  for (let i = 0; i < depth; i++) trimmed += (i === depth - 1 ? ']' : '}')
-  return trimmed
 }
 
 // ── Effort zones ──────────────────────────────────────────────────────────────
@@ -199,7 +178,7 @@ function detectGoalType(goalType: string): string {
   return 'general'
 }
 
-// Returns peak weekly caps for week 9-11 of a 12-week plan
+// Peak weekly caps for weeks 9-11 of a 12-week plan
 function getCapsForGoal(level: FitnessLevel, goalRaw: string): VolumeCap {
   const goal = detectGoalType(goalRaw)
 
@@ -257,7 +236,6 @@ function getCapsForGoal(level: FitnessLevel, goalRaw: string): VolumeCap {
     },
   }
 
-  // Fallback caps for unknown goal types (general fitness)
   const fallback: Record<FitnessLevel, VolumeCap> = {
     beginner:     { run: 25,  ride: 80,  swim: 4,  maxSessions: 4,  sessionNote: 'Max 4 sessions. No two consecutive hard days.' },
     intermediate: { run: 35,  ride: 120, swim: 6,  maxSessions: 5,  sessionNote: 'Max 5 sessions. Hard/easy alternation.' },
@@ -268,72 +246,205 @@ function getCapsForGoal(level: FitnessLevel, goalRaw: string): VolumeCap {
   return caps[goal]?.[level] ?? fallback[level] ?? fallback.intermediate
 }
 
-// ── Prompt & expansion ────────────────────────────────────────────────────────
+// ── Code-based base week generation ──────────────────────────────────────────
+// No AI involved in volume or scheduling decisions — all deterministic from user data.
 
-function buildPrompt(ctx: UserContext): string {
-  const { disciplines, training_phase, preferences, coach_notes_freetext, name } = ctx.user
-  const goal = ctx.goal
+const MAX_WEEKLY_MULTIPLIER = 1.35  // week 10 multiplier (peak)
 
-  const fitnessLevel    = ((preferences.fitness_level as string) ?? 'intermediate') as FitnessLevel
-  const daysPerWeek     = Number(preferences.training_days_per_week) || 4
-  const preferredLongDay = (preferences.preferred_long_day as string) ?? 'Saturday'
-  const goalType        = goal?.event_type ?? ''
-  const caps            = getCapsForGoal(fitnessLevel, goalType)
+// Pick session days spread maximally across the week.
+// Returns array with [0] = preferred (long/primary) day, [1..] = others, unsorted.
+function selectSessionDays(
+  numSessions: number,
+  preferredDayIdx: number,
+  excludedIdxs: Set<number>,
+): number[] {
+  if (numSessions <= 0) return []
 
-  // Week-1 starting volumes = 90% of current, capped at 55% of peak
-  const startPct = training_phase === 'return' ? 0.60 : 0.90
-  const peakPct  = 0.55  // week 1 target as % of peak cap
+  // If preferred day is taken, shift to closest available
+  let startDay = preferredDayIdx
+  if (excludedIdxs.has(startDay)) {
+    for (let offset = 1; offset <= 6; offset++) {
+      const candidate = (preferredDayIdx + offset) % 7
+      if (!excludedIdxs.has(candidate)) { startDay = candidate; break }
+    }
+  }
 
-  const curRun  = preferences.run_weekly_km  ? Math.min(Number(preferences.run_weekly_km)  * startPct, caps.run  * peakPct) : caps.run  * peakPct
-  const curRide = preferences.ride_weekly_km ? Math.min(Number(preferences.ride_weekly_km) * startPct, caps.ride * peakPct) : caps.ride * peakPct
-  const curSwim = preferences.swim_weekly_km ? Math.min(Number(preferences.swim_weekly_km) * startPct, caps.swim * peakPct) : caps.swim * peakPct
+  const result: number[] = [startDay]
 
-  const goalLine = goal
-    ? `${goalType || 'fitness goal'}${goal.target_date ? ' on ' + goal.target_date : ''}`
-    : 'general fitness'
+  for (let i = 1; i < numSessions; i++) {
+    let bestDay = -1
+    let bestScore = -1
 
-  const paceLines: string[] = []
-  if (disciplines.includes('run')  && preferences.run_pace_easy)       paceLines.push(`Run easy pace: ${preferences.run_pace_easy}/km`)
-  if (disciplines.includes('ride') && preferences.ride_speed_kmh)      paceLines.push(`Ride avg speed: ${preferences.ride_speed_kmh} km/h`)
-  if (disciplines.includes('swim') && preferences.swim_pace_per_100m)  paceLines.push(`Swim comfortable pace: ${preferences.swim_pace_per_100m}/100m`)
+    for (let d = 0; d < 7; d++) {
+      if (excludedIdxs.has(d) || result.includes(d)) continue
+      // Greedy: pick the day that maximises min distance to all already-picked days
+      const minDist = Math.min(...result.map(r => {
+        const diff = Math.abs(r - d)
+        return Math.min(diff, 7 - diff)
+      }))
+      if (minDist > bestScore) { bestScore = minDist; bestDay = d }
+    }
 
-  const brickNote = disciplines.length > 1
-    ? '\n- Include ONE brick session (ride then run on the same day) for triathlon transition practice.'
-    : ''
+    if (bestDay !== -1) result.push(bestDay)
+  }
 
-  const returnNote = training_phase === 'return'
-    ? '\n- RETURNING FROM BREAK: first 3 weeks easy only, no tempo/interval sessions.'
-    : ''
-
-  return `ATHLETE PROFILE:
-Name: ${name ?? 'Athlete'}
-Goal: ${goalLine}
-Fitness level: ${fitnessLevel}
-Training phase: ${training_phase}
-Disciplines: ${disciplines.join(' + ')}
-Training days available: ${daysPerWeek} days/week
-Preferred long session day: ${preferredLongDay}
-Preferred days: ${(preferences.training_days as string | undefined) ?? 'flexible'}
-${paceLines.length ? '\nCURRENT PACES:\n' + paceLines.join('\n') : ''}
-Coach notes: ${coach_notes_freetext ?? 'none'}
-
-HARD CONSTRAINTS — NEVER EXCEED:
-- Maximum ${Math.min(daysPerWeek, caps.maxSessions)} sessions per week (never exceed athlete's available days)
-- ${caps.sessionNote}
-- Never two hard sessions (tempo/interval/speed) on consecutive days
-- Long session MUST be scheduled on ${preferredLongDay}
-- Every 4th week: recovery week at 70% volume
-- Start at 90% of current volume for week 1, build max 10%/week${returnNote}${brickNote}
-${disciplines.includes('run')  && caps.run  ? `- Run week-1 volume: ~${Math.round(curRun)}km (peak cap: ${caps.run}km/week)` : ''}
-${disciplines.includes('ride') && caps.ride ? `- Ride week-1 volume: ~${Math.round(curRide)}km (peak cap: ${caps.ride}km/week)` : ''}
-${disciplines.includes('swim') && caps.swim ? `- Swim week-1 volume: ~${parseFloat(curSwim.toFixed(1))}km (peak cap: ${caps.swim}km/week)` : ''}
-
-Generate exactly ONE base training week following all constraints above.
-Use varied session types: easy, tempo, interval, long — appropriate for ${fitnessLevel} level.
-
-Return ONLY this JSON (no markdown, no explanation):
-{"sessions":[{"day":"Mon","disc":"run","type":"easy","km":8,"min":45},{"day":"Wed","disc":"run","type":"tempo","km":6,"min":40},{"day":"Fri","disc":"run","type":"interval","km":7,"min":50},{"day":"${preferredLongDay.slice(0,3)}","disc":"run","type":"long","km":14,"min":75}]}`
+  return result  // [0] is always the primary (long) day
 }
+
+function buildBaseWeek(ctx: UserContext): AiSession[] {
+  const { disciplines, training_phase, preferences } = ctx.user
+  const level       = ((preferences.fitness_level as string) ?? 'intermediate') as FitnessLevel
+  const daysPerWeek = Math.min(Number(preferences.training_days_per_week) || 4, 7)
+  const longDayRaw  = (preferences.preferred_long_day as string ?? 'Saturday')
+  const longDayIdx  = DAY_INDEX[longDayRaw.toLowerCase()] ?? 5
+  const isReturn    = training_phase === 'return'
+  const goalType    = ctx.goal?.event_type ?? (preferences.goal_event_type as string ?? '')
+  const caps        = getCapsForGoal(level, goalType)
+  const startPct    = isReturn ? 0.60 : 0.90
+
+  // Max quality sessions per level (beginners stay aerobic only)
+  const maxQuality = (level === 'beginner' || isReturn) ? 0
+    : level === 'intermediate' ? 1
+    : 2
+
+  // Week-1 km: 90% of current volume, capped so peak week never exceeds the cap.
+  // peakCap / MAX_WEEKLY_MULTIPLIER is the highest we can start and still be legal at peak.
+  function w1km(disc: string, cap: number): number {
+    if (!disciplines.includes(disc) || cap === 0) return 0
+    const cur = Number((preferences as Record<string, unknown>)[`${disc}_weekly_km`]) || 0
+    const maxStart = cap / MAX_WEEKLY_MULTIPLIER
+    if (cur > 0) return Math.min(cur * startPct, maxStart)
+    return maxStart * 0.75  // no current data: start at 75% of the max-safe week-1
+  }
+
+  const runKmWeek  = w1km('run',  caps.run)
+  const rideKmWeek = w1km('ride', caps.ride)
+  const swimKmWeek = w1km('swim', caps.swim)
+
+  console.log('[PLAN] Week-1 volumes computed:', {
+    run: runKmWeek.toFixed(1), ride: rideKmWeek.toFixed(1), swim: swimKmWeek.toFixed(1),
+    caps: { run: caps.run, ride: caps.ride, swim: caps.swim },
+    daysPerWeek, longDayRaw, level,
+  })
+
+  const sessions: AiSession[] = []
+  const usedDays = new Set<number>()
+
+  // ── RUN sessions ──────────────────────────────────────────────────────────
+  if (runKmWeek > 0) {
+    const numRun = disciplines.length === 1
+      ? daysPerWeek
+      : Math.max(2, Math.floor(daysPerWeek * 0.45))
+
+    const longKm   = parseFloat((runKmWeek * 0.40).toFixed(1))
+    const restKm   = runKmWeek - longKm
+    const numOther = numRun - 1
+    const eachKm   = numOther > 0 ? parseFloat((restKm / numOther).toFixed(1)) : 0
+
+    const runDayIdxs = selectSessionDays(numRun, longDayIdx, usedDays)
+    runDayIdxs.forEach(d => usedDays.add(d))
+
+    let qualityAdded = 0
+
+    runDayIdxs.forEach((dayIdx, pos) => {
+      const isLong = pos === 0  // index 0 is always the preferred (long) day
+
+      if (isLong) {
+        sessions.push({
+          day:  ALL_DAYS[dayIdx],
+          disc: 'run',
+          type: 'long',
+          km:   longKm,
+          min:  Math.round(longKm * 7.0),
+        })
+      } else {
+        // Place quality sessions toward the middle-end of the non-long slots
+        const nonLongDone     = pos - 1
+        const remainingNonLong = numOther - nonLongDone
+        const canDoQuality = qualityAdded < maxQuality
+          && remainingNonLong <= (maxQuality - qualityAdded + 1)
+          && numOther >= 2
+        const type = canDoQuality
+          ? (qualityAdded === 0 ? 'tempo' : 'interval')
+          : 'easy'
+        if (canDoQuality) qualityAdded++
+
+        const minPerKm = type === 'tempo' ? 5.5 : type === 'interval' ? 5.0 : 6.5
+        sessions.push({
+          day:  ALL_DAYS[dayIdx],
+          disc: 'run',
+          type,
+          km:   eachKm,
+          min:  Math.round(eachKm * minPerKm),
+        })
+      }
+    })
+  }
+
+  // ── RIDE sessions ─────────────────────────────────────────────────────────
+  if (rideKmWeek > 0) {
+    const numRide = disciplines.length === 1
+      ? daysPerWeek
+      : Math.max(1, Math.round(daysPerWeek / disciplines.length))
+
+    const rideLongKm  = parseFloat((rideKmWeek * 0.55).toFixed(1))
+    const numRideOther = numRide - 1
+    const rideEachKm  = numRideOther > 0
+      ? parseFloat(((rideKmWeek - rideLongKm) / numRideOther).toFixed(1))
+      : 0
+
+    // Preferred ride long day: own long day (single disc) or 2 days after run long (multi)
+    const ridePrefIdx = disciplines.length === 1 ? longDayIdx : (longDayIdx + 2) % 7
+    const rideDayIdxs = selectSessionDays(numRide, ridePrefIdx, usedDays)
+    rideDayIdxs.forEach(d => usedDays.add(d))
+
+    rideDayIdxs.forEach((dayIdx, pos) => {
+      const isLong = pos === 0
+      sessions.push({
+        day:  ALL_DAYS[dayIdx],
+        disc: 'ride',
+        type: isLong ? 'long' : 'easy',
+        km:   isLong ? rideLongKm : rideEachKm,
+        min:  Math.round((isLong ? rideLongKm : rideEachKm) * 2.2),
+      })
+    })
+  }
+
+  // ── SWIM sessions ─────────────────────────────────────────────────────────
+  if (swimKmWeek > 0) {
+    const numSwim   = Math.max(1, Math.round(daysPerWeek / disciplines.length))
+    const swimEachKm = parseFloat((swimKmWeek / numSwim).toFixed(1))
+
+    // Swim starts on the opposite side of the week from the long day
+    const swimPrefIdx = (longDayIdx + 3) % 7
+    const swimDayIdxs = selectSessionDays(numSwim, swimPrefIdx, usedDays)
+    swimDayIdxs.forEach(d => usedDays.add(d))
+
+    swimDayIdxs.forEach((dayIdx, pos) => {
+      sessions.push({
+        day:  ALL_DAYS[dayIdx],
+        disc: 'swim',
+        type: pos === 0 ? 'base' : 'interval',
+        km:   swimEachKm,
+        min:  Math.round(swimEachKm * 30),
+      })
+    })
+  }
+
+  // Sort by day of week
+  const sorted = sessions.sort((a, b) =>
+    (DAY_INDEX[a.day.toLowerCase()] ?? 0) - (DAY_INDEX[b.day.toLowerCase()] ?? 0),
+  )
+
+  console.log('[PLAN] Base week sessions:', sorted.map(s =>
+    `${s.day} ${s.disc} ${s.type} ${s.km}km`,
+  ))
+  console.log('[PLAN] Base week total km:', sorted.reduce((sum, s) => sum + s.km, 0).toFixed(1))
+
+  return sorted
+}
+
+// ── 12-week expansion ─────────────────────────────────────────────────────────
 
 function expandToTwelveWeeks(baseSessions: AiSession[]): Array<{ week: number; sessions: AiSession[] }> {
   const MULTIPLIERS = [
@@ -352,33 +463,7 @@ function expandToTwelveWeeks(baseSessions: AiSession[]): Array<{ week: number; s
   }))
 }
 
-function hardcodedSessions(ctx: UserContext): AiSession[] {
-  const { disciplines, preferences } = ctx.user
-  const fitnessLevel = ((preferences.fitness_level as string) ?? 'intermediate') as FitnessLevel
-  const goalType = (preferences.goal_event_type as string) ?? ''
-  const caps = getCapsForGoal(fitnessLevel, goalType)
-
-  // Scale fallback sessions to ~55% of the weekly cap for week 1
-  const runStart  = Math.round(caps.run  * 0.55)
-  const rideStart = Math.round(caps.ride * 0.55)
-  const swimStart = parseFloat((caps.swim * 0.55).toFixed(1))
-
-  const sessions: AiSession[] = []
-  if (disciplines.includes('swim')) {
-    sessions.push({ day: 'Mon', disc: 'swim', type: 'base',     km: parseFloat((swimStart * 0.45).toFixed(1)), min: 35 })
-    sessions.push({ day: 'Thu', disc: 'swim', type: 'interval', km: parseFloat((swimStart * 0.55).toFixed(1)), min: 40 })
-  }
-  if (disciplines.includes('ride')) {
-    sessions.push({ day: 'Tue', disc: 'ride', type: 'easy', km: Math.round(rideStart * 0.45), min: 55 })
-    sessions.push({ day: 'Sat', disc: 'ride', type: 'long', km: Math.round(rideStart * 0.55), min: 80 })
-  }
-  if (disciplines.includes('run')) {
-    sessions.push({ day: 'Wed', disc: 'run',  type: 'easy',  km: Math.round(runStart * 0.35), min: 40 })
-    sessions.push({ day: 'Fri', disc: 'run',  type: 'tempo', km: Math.round(runStart * 0.25), min: 35 })
-    sessions.push({ day: 'Sun', disc: 'run',  type: 'long',  km: Math.round(runStart * 0.40), min: 65 })
-  }
-  return sessions
-}
+// ── DB row construction ───────────────────────────────────────────────────────
 
 function sessionsToRows(
   planId: string,
@@ -424,11 +509,20 @@ function sessionsToRows(
   )
 }
 
+// ── Main entry point ──────────────────────────────────────────────────────────
+
 export async function generatePlanSkeleton(
   userId: string,
   context: UserContext,
   onProgress?: (msg: string) => void,
 ): Promise<void> {
+  console.log('[PLAN] USER CONTEXT FOR PLAN:', JSON.stringify({
+    name:           context.user.name,
+    disciplines:    context.user.disciplines,
+    training_phase: context.user.training_phase,
+    preferences:    context.user.preferences,
+    goal:           context.goal,
+  }, null, 2))
   console.log('[PLAN] Start:', Date.now())
 
   const { data: existing } = await supabase
@@ -444,55 +538,9 @@ export async function generatePlanSkeleton(
     return
   }
 
-  console.log('[PLAN] Context built:', Date.now())
   onProgress?.('Building your plan…')
 
-  let baseSessions: AiSession[] | null = null
-
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 15_000)
-
-  const PREFILL = '{"sessions":['
-
-  try {
-    console.log('[PLAN] AI call start:', Date.now())
-    const stream = client.messages.stream(
-      {
-        model:      MODEL,
-        max_tokens: 400,
-        system:     'You are an endurance coach. Return only valid JSON, no markdown or explanation.',
-        messages:   [
-          { role: 'user',      content: buildPrompt(context) },
-          { role: 'assistant', content: PREFILL },
-        ],
-      },
-      { signal: controller.signal },
-    )
-
-    const continuation = await stream.finalText()
-    console.log('[PLAN] AI call end:', Date.now())
-
-    const fullText   = PREFILL + continuation
-    const closedText = closeJson(fullText)
-    const parsed     = JSON.parse(closedText) as { sessions: AiSession[] }
-    if (Array.isArray(parsed.sessions) && parsed.sessions.length > 0) {
-      baseSessions = parsed.sessions
-      console.log(`[PLAN] AI returned ${baseSessions.length} base sessions`)
-    }
-  } catch (err: any) {
-    if (controller.signal.aborted) {
-      console.warn('[PLAN] AI timed out — using hardcoded base week')
-    } else {
-      console.error('[PLAN] AI error:', err.message)
-    }
-  } finally {
-    clearTimeout(timeout)
-  }
-
-  if (!baseSessions) {
-    console.log('[PLAN] Using hardcoded base week')
-    baseSessions = hardcodedSessions(context)
-  }
+  const baseSessions = buildBaseWeek(context)
 
   const allWeeks  = expandToTwelveWeeks(baseSessions)
   const startDate = new Date()
