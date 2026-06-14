@@ -24,28 +24,31 @@ const FITNESS_LEVELS: { value: FitnessLevel; emoji: string; label: string; desc:
 ]
 
 const DAY_OPTIONS = [3, 4, 5, 6, 7]
+const LONG_DAY_OPTIONS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 interface Props {
   initialDisciplines: Discipline[]
   initialPhase?: TrainingPhase
   initialFitnessLevel?: FitnessLevel
   initialTrainingDays?: number
-  onNext: (disciplines: Discipline[], phase: TrainingPhase, fitnessLevel: FitnessLevel, trainingDaysPerWeek: number) => void
+  initialPreferredLongDay?: string
+  onNext: (disciplines: Discipline[], phase: TrainingPhase, fitnessLevel: FitnessLevel, trainingDaysPerWeek: number, preferredLongDay: string) => void
 }
 
 export default function Step1DisciplinesPhase({
-  initialDisciplines, initialPhase, initialFitnessLevel, initialTrainingDays, onNext,
+  initialDisciplines, initialPhase, initialFitnessLevel, initialTrainingDays, initialPreferredLongDay, onNext,
 }: Props) {
-  const [disciplines, setDisciplines]       = useState<Discipline[]>(initialDisciplines)
-  const [phase, setPhase]                   = useState<TrainingPhase | undefined>(initialPhase)
-  const [fitnessLevel, setFitnessLevel]     = useState<FitnessLevel | undefined>(initialFitnessLevel)
-  const [trainingDays, setTrainingDays]     = useState<number | undefined>(initialTrainingDays)
+  const [disciplines, setDisciplines]         = useState<Discipline[]>(initialDisciplines)
+  const [phase, setPhase]                     = useState<TrainingPhase | undefined>(initialPhase)
+  const [fitnessLevel, setFitnessLevel]       = useState<FitnessLevel | undefined>(initialFitnessLevel)
+  const [trainingDays, setTrainingDays]       = useState<number | undefined>(initialTrainingDays)
+  const [preferredLongDay, setPreferredLongDay] = useState<string | undefined>(initialPreferredLongDay)
 
   function toggle(d: Discipline) {
     setDisciplines(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d])
   }
 
-  const canContinue = disciplines.length > 0 && phase !== undefined && fitnessLevel !== undefined && trainingDays !== undefined
+  const canContinue = disciplines.length > 0 && phase !== undefined && fitnessLevel !== undefined && trainingDays !== undefined && preferredLongDay !== undefined
 
   return (
     <div className="px-6 pb-8">
@@ -130,7 +133,7 @@ export default function Step1DisciplinesPhase({
 
       {/* Days per week */}
       <h2 className="text-xl font-semibold mb-1">How many days a week can you train?</h2>
-      <p className="text-gray-500 text-sm mb-4">Your plan will never exceed this.</p>
+      <p className="text-gray-500 text-sm mb-4">Your plan will never schedule more sessions than this.</p>
       <div className="flex gap-2 mb-8">
         {DAY_OPTIONS.map(d => (
           <button
@@ -147,8 +150,27 @@ export default function Step1DisciplinesPhase({
         ))}
       </div>
 
+      {/* Preferred long day */}
+      <h2 className="text-xl font-semibold mb-1">When do you do your long session?</h2>
+      <p className="text-gray-500 text-sm mb-4">Your long run, ride, or swim will always land on this day.</p>
+      <div className="grid grid-cols-4 gap-2 mb-8">
+        {LONG_DAY_OPTIONS.map(day => (
+          <button
+            key={day}
+            onClick={() => setPreferredLongDay(day)}
+            className={`py-3 rounded-xl border-2 text-sm font-semibold transition-all ${
+              preferredLongDay === day
+                ? 'border-black bg-black text-white'
+                : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+            }`}
+          >
+            {day.slice(0, 3)}
+          </button>
+        ))}
+      </div>
+
       <button
-        onClick={() => canContinue && onNext(disciplines, phase!, fitnessLevel!, trainingDays!)}
+        onClick={() => canContinue && onNext(disciplines, phase!, fitnessLevel!, trainingDays!, preferredLongDay!)}
         disabled={!canContinue}
         className="w-full py-4 bg-black text-white font-semibold rounded-xl disabled:opacity-40"
       >

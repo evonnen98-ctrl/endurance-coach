@@ -172,20 +172,100 @@ const TYPE_TITLE: Record<string, string> = {
   base: 'Base', drill: 'Drills', brick: 'Brick', recovery: 'Recovery', speed: 'Speed',
 }
 
-// ── Volume caps per fitness level ─────────────────────────────────────────────
+// ── Volume caps by goal + fitness level ───────────────────────────────────────
 
 interface VolumeCap {
-  run: number   // max weekly km
+  run: number
   ride: number
   swim: number
+  maxSessions: number
   sessionNote: string
 }
 
-const VOLUME_CAPS: Record<string, VolumeCap> = {
-  beginner:     { run: 25,  ride: 80,  swim: 4,  sessionNote: 'No back-to-back hard sessions. Max 1 hard session per discipline per week.' },
-  intermediate: { run: 35,  ride: 120, swim: 6,  sessionNote: 'Max one hard session per discipline. One easy/recovery day between hard days.' },
-  advanced:     { run: 50,  ride: 160, swim: 10, sessionNote: 'Max two hard sessions per discipline. Never two hard days back-to-back.' },
-  competitive:  { run: 65,  ride: 200, swim: 15, sessionNote: 'High volume, polarised. Never two consecutive hard sessions.' },
+type FitnessLevel = 'beginner' | 'intermediate' | 'advanced' | 'competitive'
+
+function detectGoalType(goalType: string): string {
+  const g = (goalType ?? '').toLowerCase()
+  if (g.includes('ironman') && !g.includes('70.3') && !g.includes('half')) return 'ironman'
+  if (g.includes('70.3') || (g.includes('half') && g.includes('iron'))) return '70.3'
+  if (g.includes('olympic tri') || (g.includes('40km') && g.includes('swim'))) return 'olympic_tri'
+  if (g.includes('sprint tri')) return 'sprint_tri'
+  if (g.includes('marathon') && !g.includes('half')) return 'marathon'
+  if (g.includes('half marathon') || g.includes('21km')) return 'half_marathon'
+  if (g.includes('10km') || g.includes('10k')) return '10km'
+  if (g.includes('5km') || g.includes('5k')) return '5km'
+  if (g.includes('century') || g.includes('gran fondo') || g.includes('100km')) return 'century_ride'
+  if (g.includes('maintain')) return 'maintain'
+  return 'general'
+}
+
+// Returns peak weekly caps for week 9-11 of a 12-week plan
+function getCapsForGoal(level: FitnessLevel, goalRaw: string): VolumeCap {
+  const goal = detectGoalType(goalRaw)
+
+  const caps: Record<string, Partial<Record<FitnessLevel, VolumeCap>>> = {
+    ironman: {
+      intermediate: { run: 55,  ride: 250, swim: 12, maxSessions: 10, sessionNote: 'Max 10 sessions/week. One rest day mandatory.' },
+      advanced:     { run: 65,  ride: 300, swim: 16, maxSessions: 12, sessionNote: 'Max 12 sessions/week. At least one full rest day.' },
+      competitive:  { run: 75,  ride: 350, swim: 20, maxSessions: 14, sessionNote: 'High volume. No back-to-back long sessions.' },
+    },
+    '70.3': {
+      beginner:     { run: 40,  ride: 140, swim: 6,  maxSessions: 8,  sessionNote: 'Max 8 sessions. Rest is training.' },
+      intermediate: { run: 50,  ride: 180, swim: 10, maxSessions: 9,  sessionNote: 'Max 9 sessions/week. Hard/easy alternation.' },
+      advanced:     { run: 60,  ride: 220, swim: 14, maxSessions: 10, sessionNote: 'Max 10 sessions. Never two hard days consecutive.' },
+    },
+    olympic_tri: {
+      beginner:     { run: 25,  ride: 80,  swim: 4,  maxSessions: 6,  sessionNote: 'Max 6 sessions/week. One rest day minimum.' },
+      intermediate: { run: 35,  ride: 120, swim: 7,  maxSessions: 7,  sessionNote: 'Max 7 sessions. Include one brick.' },
+      advanced:     { run: 45,  ride: 150, swim: 10, maxSessions: 9,  sessionNote: 'Max 9 sessions. Hard/easy alternation.' },
+    },
+    sprint_tri: {
+      beginner:     { run: 15,  ride: 60,  swim: 3,  maxSessions: 6,  sessionNote: 'Max 6 sessions. Build to race distance.' },
+      intermediate: { run: 25,  ride: 80,  swim: 5,  maxSessions: 7,  sessionNote: 'Max 7 sessions. Include brick weekly.' },
+      advanced:     { run: 35,  ride: 100, swim: 7,  maxSessions: 8,  sessionNote: 'Max 8 sessions. Two bricks per week max.' },
+    },
+    marathon: {
+      beginner:     { run: 55,  ride: 0,   swim: 0,  maxSessions: 5,  sessionNote: '4-5 runs/week. Long run on preferred day.' },
+      intermediate: { run: 70,  ride: 0,   swim: 0,  maxSessions: 6,  sessionNote: '5-6 runs/week. Easy running dominates (80%+).' },
+      advanced:     { run: 85,  ride: 0,   swim: 0,  maxSessions: 7,  sessionNote: 'Up to 7 sessions. Include double-day max once/week.' },
+    },
+    half_marathon: {
+      beginner:     { run: 40,  ride: 0,   swim: 0,  maxSessions: 4,  sessionNote: '4 runs/week. Easy base building.' },
+      intermediate: { run: 55,  ride: 0,   swim: 0,  maxSessions: 5,  sessionNote: '5 runs/week. One quality session per week.' },
+      advanced:     { run: 70,  ride: 0,   swim: 0,  maxSessions: 6,  sessionNote: '6 runs/week. Two quality sessions max.' },
+    },
+    '10km': {
+      beginner:     { run: 25,  ride: 0,   swim: 0,  maxSessions: 4,  sessionNote: '3-4 runs/week. Gradual build.' },
+      intermediate: { run: 40,  ride: 0,   swim: 0,  maxSessions: 5,  sessionNote: '4-5 runs/week. One interval session/week.' },
+      advanced:     { run: 60,  ride: 0,   swim: 0,  maxSessions: 6,  sessionNote: '5-6 runs/week. Two quality sessions max.' },
+    },
+    '5km': {
+      beginner:     { run: 20,  ride: 0,   swim: 0,  maxSessions: 3,  sessionNote: '3 runs/week. Build slowly.' },
+      intermediate: { run: 35,  ride: 0,   swim: 0,  maxSessions: 4,  sessionNote: '4 runs/week. Mix easy and quality.' },
+      advanced:     { run: 55,  ride: 0,   swim: 0,  maxSessions: 6,  sessionNote: 'Up to 6 runs/week. Sharpening phase.' },
+    },
+    century_ride: {
+      beginner:     { run: 0,   ride: 150, swim: 0,  maxSessions: 4,  sessionNote: '3-4 rides/week. Long ride is key.' },
+      intermediate: { run: 0,   ride: 220, swim: 0,  maxSessions: 5,  sessionNote: '4-5 rides/week. Sweet spot and long rides.' },
+      advanced:     { run: 0,   ride: 300, swim: 0,  maxSessions: 6,  sessionNote: '5-6 rides/week. High volume endurance.' },
+    },
+    maintain: {
+      beginner:     { run: 20,  ride: 60,  swim: 3,  maxSessions: 3,  sessionNote: '3 sessions max. No hard quality sessions.' },
+      intermediate: { run: 30,  ride: 100, swim: 4,  maxSessions: 4,  sessionNote: '4 sessions max. Easy and moderate only.' },
+      advanced:     { run: 40,  ride: 140, swim: 6,  maxSessions: 5,  sessionNote: '5 sessions max. Maintain fitness, no peaking.' },
+      competitive:  { run: 50,  ride: 180, swim: 8,  maxSessions: 6,  sessionNote: '6 sessions. Maintenance volume.' },
+    },
+  }
+
+  // Fallback caps for unknown goal types (general fitness)
+  const fallback: Record<FitnessLevel, VolumeCap> = {
+    beginner:     { run: 25,  ride: 80,  swim: 4,  maxSessions: 4,  sessionNote: 'Max 4 sessions. No two consecutive hard days.' },
+    intermediate: { run: 35,  ride: 120, swim: 6,  maxSessions: 5,  sessionNote: 'Max 5 sessions. Hard/easy alternation.' },
+    advanced:     { run: 50,  ride: 160, swim: 10, maxSessions: 6,  sessionNote: 'Max 6 sessions. Never two hard days back-to-back.' },
+    competitive:  { run: 65,  ride: 200, swim: 15, maxSessions: 7,  sessionNote: 'High volume. Polarised approach.' },
+  }
+
+  return caps[goal]?.[level] ?? fallback[level] ?? fallback.intermediate
 }
 
 // ── Prompt & expansion ────────────────────────────────────────────────────────
@@ -194,54 +274,65 @@ function buildPrompt(ctx: UserContext): string {
   const { disciplines, training_phase, preferences, coach_notes_freetext, name } = ctx.user
   const goal = ctx.goal
 
-  const fitnessLevel = (preferences.fitness_level as string) ?? 'intermediate'
-  const daysPerWeek  = Number(preferences.training_days_per_week) || 4
-  const caps         = VOLUME_CAPS[fitnessLevel] ?? VOLUME_CAPS.intermediate
+  const fitnessLevel    = ((preferences.fitness_level as string) ?? 'intermediate') as FitnessLevel
+  const daysPerWeek     = Number(preferences.training_days_per_week) || 4
+  const preferredLongDay = (preferences.preferred_long_day as string) ?? 'Saturday'
+  const goalType        = goal?.event_type ?? ''
+  const caps            = getCapsForGoal(fitnessLevel, goalType)
 
-  // Current volumes — clamp starting volumes to cap
-  const curRun  = preferences.run_weekly_km  ? Math.min(Number(preferences.run_weekly_km),  caps.run)  : Math.round(caps.run  * 0.55)
-  const curRide = preferences.ride_weekly_km ? Math.min(Number(preferences.ride_weekly_km), caps.ride) : Math.round(caps.ride * 0.55)
-  const curSwim = preferences.swim_weekly_km ? Math.min(Number(preferences.swim_weekly_km), caps.swim) : Math.round(caps.swim * 0.55)
+  // Week-1 starting volumes = 90% of current, capped at 55% of peak
+  const startPct = training_phase === 'return' ? 0.60 : 0.90
+  const peakPct  = 0.55  // week 1 target as % of peak cap
+
+  const curRun  = preferences.run_weekly_km  ? Math.min(Number(preferences.run_weekly_km)  * startPct, caps.run  * peakPct) : caps.run  * peakPct
+  const curRide = preferences.ride_weekly_km ? Math.min(Number(preferences.ride_weekly_km) * startPct, caps.ride * peakPct) : caps.ride * peakPct
+  const curSwim = preferences.swim_weekly_km ? Math.min(Number(preferences.swim_weekly_km) * startPct, caps.swim * peakPct) : caps.swim * peakPct
 
   const goalLine = goal
-    ? `${goal.event_type ?? 'fitness goal'} on ${goal.target_date ?? 'no set date'}`
+    ? `${goalType || 'fitness goal'}${goal.target_date ? ' on ' + goal.target_date : ''}`
     : 'general fitness'
 
   const paceLines: string[] = []
-  if (disciplines.includes('run')  && preferences.run_pace_easy)  paceLines.push(`Run easy pace: ${preferences.run_pace_easy}/km`)
-  if (disciplines.includes('ride') && preferences.ride_speed_kmh) paceLines.push(`Ride avg speed: ${preferences.ride_speed_kmh} km/h`)
-  if (disciplines.includes('swim') && preferences.swim_pace_per_100m) paceLines.push(`Swim comfortable pace: ${preferences.swim_pace_per_100m}/100m`)
+  if (disciplines.includes('run')  && preferences.run_pace_easy)       paceLines.push(`Run easy pace: ${preferences.run_pace_easy}/km`)
+  if (disciplines.includes('ride') && preferences.ride_speed_kmh)      paceLines.push(`Ride avg speed: ${preferences.ride_speed_kmh} km/h`)
+  if (disciplines.includes('swim') && preferences.swim_pace_per_100m)  paceLines.push(`Swim comfortable pace: ${preferences.swim_pace_per_100m}/100m`)
 
   const brickNote = disciplines.length > 1
     ? '\n- Include ONE brick session (ride then run on the same day) for triathlon transition practice.'
     : ''
 
+  const returnNote = training_phase === 'return'
+    ? '\n- RETURNING FROM BREAK: first 3 weeks easy only, no tempo/interval sessions.'
+    : ''
+
   return `ATHLETE PROFILE:
 Name: ${name ?? 'Athlete'}
+Goal: ${goalLine}
 Fitness level: ${fitnessLevel}
 Training phase: ${training_phase}
 Disciplines: ${disciplines.join(' + ')}
-Goal: ${goalLine}
 Training days available: ${daysPerWeek} days/week
+Preferred long session day: ${preferredLongDay}
 Preferred days: ${(preferences.training_days as string | undefined) ?? 'flexible'}
 ${paceLines.length ? '\nCURRENT PACES:\n' + paceLines.join('\n') : ''}
 Coach notes: ${coach_notes_freetext ?? 'none'}
 
 HARD CONSTRAINTS — NEVER EXCEED:
-- Maximum ${daysPerWeek} sessions total per week (one session per day unless brick)
-${disciplines.includes('run')  ? `- Run: week-1 volume MUST be exactly ${curRun}km. Hard cap: ${caps.run}km/week.` : ''}
-${disciplines.includes('ride') ? `- Ride: week-1 volume MUST be exactly ${curRide}km. Hard cap: ${caps.ride}km/week.` : ''}
-${disciplines.includes('swim') ? `- Swim: week-1 volume MUST be exactly ${curSwim}km. Hard cap: ${caps.swim}km/week.` : ''}
+- Maximum ${Math.min(daysPerWeek, caps.maxSessions)} sessions per week (never exceed athlete's available days)
 - ${caps.sessionNote}
-- Never schedule two hard sessions (tempo/interval/speed) on consecutive days${brickNote}
+- Never two hard sessions (tempo/interval/speed) on consecutive days
+- Long session MUST be scheduled on ${preferredLongDay}
+- Every 4th week: recovery week at 70% volume
+- Start at 90% of current volume for week 1, build max 10%/week${returnNote}${brickNote}
+${disciplines.includes('run')  && caps.run  ? `- Run week-1 volume: ~${Math.round(curRun)}km (peak cap: ${caps.run}km/week)` : ''}
+${disciplines.includes('ride') && caps.ride ? `- Ride week-1 volume: ~${Math.round(curRide)}km (peak cap: ${caps.ride}km/week)` : ''}
+${disciplines.includes('swim') && caps.swim ? `- Swim week-1 volume: ~${parseFloat(curSwim.toFixed(1))}km (peak cap: ${caps.swim}km/week)` : ''}
 
-INSTRUCTIONS:
-Generate exactly ONE base training week with ${daysPerWeek} or fewer sessions.
+Generate exactly ONE base training week following all constraints above.
 Use varied session types: easy, tempo, interval, long — appropriate for ${fitnessLevel} level.
-Volumes must be realistic for week 1 of a 12-week build.
 
 Return ONLY this JSON (no markdown, no explanation):
-{"sessions":[{"day":"Mon","disc":"run","type":"easy","km":8,"min":45},{"day":"Wed","disc":"run","type":"tempo","km":6,"min":40},{"day":"Fri","disc":"run","type":"interval","km":7,"min":50},{"day":"Sun","disc":"run","type":"long","km":14,"min":75}]}`
+{"sessions":[{"day":"Mon","disc":"run","type":"easy","km":8,"min":45},{"day":"Wed","disc":"run","type":"tempo","km":6,"min":40},{"day":"Fri","disc":"run","type":"interval","km":7,"min":50},{"day":"${preferredLongDay.slice(0,3)}","disc":"run","type":"long","km":14,"min":75}]}`
 }
 
 function expandToTwelveWeeks(baseSessions: AiSession[]): Array<{ week: number; sessions: AiSession[] }> {
@@ -263,8 +354,9 @@ function expandToTwelveWeeks(baseSessions: AiSession[]): Array<{ week: number; s
 
 function hardcodedSessions(ctx: UserContext): AiSession[] {
   const { disciplines, preferences } = ctx.user
-  const fitnessLevel = (preferences.fitness_level as string) ?? 'intermediate'
-  const caps = VOLUME_CAPS[fitnessLevel] ?? VOLUME_CAPS.intermediate
+  const fitnessLevel = ((preferences.fitness_level as string) ?? 'intermediate') as FitnessLevel
+  const goalType = (preferences.goal_event_type as string) ?? ''
+  const caps = getCapsForGoal(fitnessLevel, goalType)
 
   // Scale fallback sessions to ~55% of the weekly cap for week 1
   const runStart  = Math.round(caps.run  * 0.55)

@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import Anthropic from '@anthropic-ai/sdk'
 import { buildUserContext } from '../services/userContext.js'
 import { generatePlan, generatePlanSkeleton } from '../services/ai/planGeneration.js'
 import { generateCheckinResponse } from '../services/ai/checkinResponse.js'
@@ -6,6 +7,7 @@ import { generatePostWorkoutResponse } from '../services/ai/postWorkoutResponse.
 import { generateWeeklyCoachNote } from '../services/ai/weeklyCoachNote.js'
 import { adjustPlan } from '../services/ai/planAdjustment.js'
 import { generateGoalCompletion } from '../services/ai/goalCompletion.js'
+import { COACH_SYSTEM_PROMPT } from '../services/ai/coachingPrompt.js'
 import { supabase } from '../lib/supabase.js'
 
 const router = Router()
@@ -175,6 +177,66 @@ router.post('/auto-adjust', async (req, res) => {
   } catch (err: any) {
     console.error('auto-adjust error:', err)
     res.status(500).json({ error: err.message ?? 'Auto-adjust failed' })
+  }
+})
+
+router.post('/coach-chat', async (req, res) => {
+  try {
+    const { userId, message, history = [] } = req.body
+    if (!userId || !message) return res.status(400).json({ error: 'userId, message required' })
+
+    const context = await buildUserContext(userId)
+    const client = new Anthropic()
+
+    const recentWorkouts = context.recent_workouts.slice(0, 5)
+      .map(w => `  ${w.date}: ${w.discipline} ${w.session_type}${w.actual_distance_km ? ' ' + w.actual_distance_km + 'km' : ''}${w.rpe ? ' RPE ' + w.rpe : ''}${w.note ? ' — "' + w.note + '"' : ''}`)
+      .join('\n')
+
+    const recentCheckins = context.recent_checkins.slice(0, 3)
+      .map(c => `  ${c.date}: feeling ${c.feeling}/5${c.soreness_notes ? ' ('+c.soreness_notes+')' : ''}`)
+      .join('\n')
+
+    const systemPrompt = `${COACH_SYSTEM_PROMPT}
+
+CURRENT ATHLETE CONTEXT:
+Name: ${context.user.name}
+Disciplines: ${context.user.disciplines.join(', ')}
+Phase: ${context.user.training_phase}
+Week: ${context.current_week} of 12
+Goal: ${context.goal?.event_type ?? 'general fitness'}${context.goal?.days_until_event != null ? ` — ${context.goal.days_until_event} days away` : ''}
+${context.injury_flags ? 'INJURY FLAG: athlete has flagged an injury recently' : ''}
+
+Recent workouts:
+${recentWorkouts || '  No recent workouts'}
+
+Recent check-ins:
+${recentCheckins || '  No recent check-ins'}
+
+Reply in 2-4 sentences max. Be direct and coach-like. Reference specific data from context when relevant.`
+
+    const messages = [
+      ...(history as Array<{ role: string; content: string }>).slice(-10).map(m => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      })),
+      { role: 'user' as const, content: message },
+    ]
+
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 300,
+      system: systemPrompt,
+      messages,
+    })
+
+    const reply = response.content[0]?.type === 'text'
+      ? response.content[0].text
+      : "I'm here — what's on your mind?"
+
+    res.json({ reply })
+  } catch (err: any) {
+    console.error('coach-chat error:', err)
+    res.status(500).json({ error: err.message ?? 'Coach chat failed' })
   }
 })
 

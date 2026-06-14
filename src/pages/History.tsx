@@ -32,7 +32,7 @@ export default function HistoryPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white px-5 pt-12 pb-5">
+      <div className="bg-white px-5 pt-14 pb-5">
         <div className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">All sessions</div>
         <h1 className="text-3xl font-bold">History</h1>
       </div>

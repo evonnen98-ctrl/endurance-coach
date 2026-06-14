@@ -16,26 +16,20 @@ interface OnboardingData {
   phase: TrainingPhase
   fitnessLevel: string
   trainingDaysPerWeek: number
+  preferredLongDay: string
   eventType: string
   targetDate: string
   stats: Record<string, string>
   coachNote: string
 }
 
-// Poll /api/health until it responds OK, or until maxMs elapses.
-// This absorbs Railway cold-start delays on the loading screen
-// instead of letting them freeze the SSE connection silently.
 async function waitForServer(maxMs = 55_000): Promise<void> {
   const deadline = Date.now() + maxMs
   while (Date.now() < deadline) {
     try {
-      const r = await fetch('/api/health', {
-        signal: AbortSignal.timeout(5_000),
-      })
+      const r = await fetch('/api/health', { signal: AbortSignal.timeout(5_000) })
       if (r.ok) return
-    } catch {
-      // server not ready yet — wait 1s and retry
-    }
+    } catch {}
     await new Promise(r => setTimeout(r, 1_000))
   }
 }
@@ -45,14 +39,20 @@ export default function OnboardingFlow({ existingUser }: Props) {
   const [step, setStep] = useState(1)
   const [building, setBuilding] = useState(false)
   const [buildMessage, setBuildMessage] = useState<string | null>(null)
+
+  // Pre-fill from existing user when rebuilding
+  const existingPrefs = (existingUser?.preferences ?? {}) as Record<string, string | number>
   const [data, setData] = useState<Partial<OnboardingData>>({
-    disciplines: existingUser?.disciplines ?? [],
+    disciplines:         existingUser?.disciplines ?? [],
+    phase:               (existingUser?.training_phase as TrainingPhase) ?? undefined,
+    fitnessLevel:        (existingPrefs.fitness_level as string)           ?? undefined,
+    trainingDaysPerWeek: Number(existingPrefs.training_days_per_week)      || undefined,
+    preferredLongDay:    (existingPrefs.preferred_long_day as string)      ?? undefined,
   })
 
   function next(patch: Partial<OnboardingData>) {
     setData(prev => ({ ...prev, ...patch }))
     setStep(s => s + 1)
-    // Ping server on every step transition — gives cold container more warm-up time
     fetch('/api/health').catch(() => {})
   }
 
@@ -63,86 +63,76 @@ export default function OnboardingFlow({ existingUser }: Props) {
   async function finish(patch: { eventType: string; targetDate: string; stats: Record<string, string>; coachNote: string }) {
     const final = { ...data, ...patch } as OnboardingData
 
-    // Show loading screen immediately
     setBuildMessage('Connecting to your coach…')
     setBuilding(true)
 
     const preferences: Record<string, string | number> = {}
-    if (final.stats?.run_weekly_km)  preferences.run_weekly_km          = parseFloat(final.stats.run_weekly_km)
-    if (final.stats?.run_pace)       preferences.run_pace_easy          = final.stats.run_pace
-    if (final.stats?.ride_weekly_km) preferences.ride_weekly_km         = parseFloat(final.stats.ride_weekly_km)
-    if (final.stats?.ride_speed)     preferences.ride_speed_kmh         = parseFloat(final.stats.ride_speed)
-    if (final.stats?.swim_weekly_km)     preferences.swim_weekly_km      = parseFloat(final.stats.swim_weekly_km)
-    if (final.stats?.swim_pace_per_100m) preferences.swim_pace_per_100m  = final.stats.swim_pace_per_100m
-    if (final.stats?.training_days)  preferences.training_days          = final.stats.training_days
-    if (final.fitnessLevel)          preferences.fitness_level           = final.fitnessLevel
-    if (final.trainingDaysPerWeek)   preferences.training_days_per_week  = final.trainingDaysPerWeek
+    if (final.stats?.run_weekly_km)      preferences.run_weekly_km         = parseFloat(final.stats.run_weekly_km)
+    if (final.stats?.run_pace)           preferences.run_pace_easy         = final.stats.run_pace
+    if (final.stats?.ride_weekly_km)     preferences.ride_weekly_km        = parseFloat(final.stats.ride_weekly_km)
+    if (final.stats?.ride_speed)         preferences.ride_speed_kmh        = parseFloat(final.stats.ride_speed)
+    if (final.stats?.swim_weekly_km)     preferences.swim_weekly_km        = parseFloat(final.stats.swim_weekly_km)
+    if (final.stats?.swim_pace_per_100m) preferences.swim_pace_per_100m    = final.stats.swim_pace_per_100m
+    if (final.stats?.training_days)      preferences.training_days         = final.stats.training_days
+    if (final.fitnessLevel)              preferences.fitness_level          = final.fitnessLevel
+    if (final.trainingDaysPerWeek)       preferences.training_days_per_week = final.trainingDaysPerWeek
+    if (final.preferredLongDay)          preferences.preferred_long_day     = final.preferredLongDay
+    if (final.eventType)                 preferences.goal_event_type        = final.eventType
 
-    // Save to Supabase (always fast — separate from Railway)
+    // Archive any existing active plan so a fresh one gets generated
+    await supabase
+      .from('training_plans')
+      .update({ status: 'archived' })
+      .eq('user_id', DEMO_USER_ID)
+      .eq('status', 'active')
+
     await Promise.all([
       supabase.from('users').upsert({
-        id: DEMO_USER_ID,
-        name: 'Athlete',
-        disciplines: final.disciplines,
-        training_phase: final.phase,
-        training_style: 'moderate',
+        id:                   DEMO_USER_ID,
+        name:                 existingUser?.name ?? 'Athlete',
+        disciplines:          final.disciplines,
+        training_phase:       final.phase,
+        training_style:       existingUser?.training_style ?? 'moderate',
         preferences,
-        coach_notes_freetext: final.coachNote,
-        onboarding_complete: false,
+        coach_notes_freetext: final.coachNote || existingUser?.coach_notes_freetext || null,
+        onboarding_complete:  false,
       }),
       supabase.from('goals').upsert({
-        id: '00000000-0000-0000-0000-000000000002',
-        user_id: DEMO_USER_ID,
-        discipline: final.disciplines.length > 1 ? 'triathlon' : final.disciplines[0],
-        event_type: final.eventType || null,
+        id:          '00000000-0000-0000-0000-000000000002',
+        user_id:     DEMO_USER_ID,
+        discipline:  final.disciplines.length > 1 ? 'triathlon' : final.disciplines[0],
+        event_type:  final.eventType || null,
         target_date: final.targetDate || null,
-        status: 'active',
+        status:      'active',
       }),
     ])
 
-    // Wait for Railway server to be fully awake before opening SSE.
-    // If it was cold, this absorbs the 30-60s delay here with a visible
-    // "Connecting…" message rather than a frozen spinner during plan generation.
     await waitForServer()
     setBuildMessage('Building your 12-week plan…')
 
     try {
       await new Promise<void>((resolve) => {
         const es = new EventSource(`/api/ai/generate-plan-stream?userId=${encodeURIComponent(DEMO_USER_ID)}`)
-
-        // 20 second max wait — redirect to dashboard regardless
         const maxWait = setTimeout(() => { es.close(); resolve() }, 20_000)
-
         es.onmessage = (e) => {
           try {
             const msg = JSON.parse(e.data) as { type: string; message?: string }
             if (msg.type === 'status' && msg.message) setBuildMessage(msg.message)
-            if (msg.type === 'done' || msg.type === 'error') {
-              clearTimeout(maxWait)
-              es.close()
-              resolve()
-            }
+            if (msg.type === 'done' || msg.type === 'error') { clearTimeout(maxWait); es.close(); resolve() }
           } catch {}
         }
         es.onerror = () => { clearTimeout(maxWait); es.close(); resolve() }
       })
-    } catch {
-      // non-fatal — user proceeds to dashboard
-    }
+    } catch {}
 
-    const { error: updateErr } = await supabase
-      .from('users')
-      .update({ onboarding_complete: true })
-      .eq('id', DEMO_USER_ID)
-
-    if (updateErr) {
-      console.error('[onboarding] update failed:', updateErr.message)
-    }
-
-    // refetchQueries waits for the DB round-trip to complete before returning.
-    // Once it resolves, the cache has onboarding_complete: true, which triggers
-    // App.tsx to re-render and unmount OnboardingFlow in favor of the dashboard.
+    await supabase.from('users').update({ onboarding_complete: true }).eq('id', DEMO_USER_ID)
     await queryClient.refetchQueries({ queryKey: ['user'] })
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['all-sessions'] }),
+      queryClient.invalidateQueries({ queryKey: ['week-sessions'] }),
+      queryClient.invalidateQueries({ queryKey: ['today-session'] }),
+      queryClient.invalidateQueries({ queryKey: ['active-goal'] }),
+    ])
   }
 
   if (building) return <BuildingPlan message={buildMessage} />
@@ -160,8 +150,9 @@ export default function OnboardingFlow({ existingUser }: Props) {
             initialPhase={data.phase}
             initialFitnessLevel={data.fitnessLevel as any}
             initialTrainingDays={data.trainingDaysPerWeek}
-            onNext={(disciplines, phase, fitnessLevel, trainingDaysPerWeek) =>
-              next({ disciplines, phase, fitnessLevel, trainingDaysPerWeek })
+            initialPreferredLongDay={data.preferredLongDay}
+            onNext={(disciplines, phase, fitnessLevel, trainingDaysPerWeek, preferredLongDay) =>
+              next({ disciplines, phase, fitnessLevel, trainingDaysPerWeek, preferredLongDay })
             }
           />
         )}

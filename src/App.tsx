@@ -6,7 +6,7 @@ import Layout from './components/layout/Layout'
 import Today from './pages/Today'
 import Plan from './pages/Plan'
 import Progress from './pages/Progress'
-import Notes from './pages/Notes'
+import Coach from './pages/Coach'
 import History from './pages/History'
 import OnboardingFlow from './components/onboarding/OnboardingFlow'
 
@@ -15,10 +15,7 @@ export default function App() {
     queryKey: ['user'],
     queryFn: async () => {
       const { data } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', DEMO_USER_ID)
-        .single()
+        .from('users').select('*').eq('id', DEMO_USER_ID).single()
       return data as User | null
     },
   })
@@ -40,11 +37,12 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/today" replace />} />
-          <Route path="today" element={<Today />} />
-          <Route path="plan" element={<Plan />} />
+          <Route path="today"    element={<Today />} />
+          <Route path="plan"     element={<Plan />} />
           <Route path="progress" element={<Progress />} />
-          <Route path="notes" element={<Notes />} />
-          <Route path="history" element={<History />} />
+          <Route path="coach"    element={<Coach />} />
+          <Route path="notes"    element={<Navigate to="/coach" replace />} />
+          <Route path="history"  element={<History />} />
         </Route>
         <Route path="*" element={<Navigate to="/today" replace />} />
       </Routes>

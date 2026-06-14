@@ -44,6 +44,12 @@ export const api = {
   autoAdjust: (userId: string) =>
     post<{ adjusted: boolean; reason?: string }>('/ai/auto-adjust', { userId }),
 
+  coachChat: (params: {
+    userId: string
+    message: string
+    history: Array<{ role: 'user' | 'assistant'; content: string }>
+  }) => post<{ reply: string }>('/ai/coach-chat', params),
+
   stravaStatus: () =>
     fetch('/api/strava/status').then(r => r.json()) as Promise<import('../types').StravaConnection>,
 

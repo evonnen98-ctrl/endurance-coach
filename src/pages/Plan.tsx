@@ -30,7 +30,7 @@ export default function PlanPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white px-5 pt-12 pb-5">
+      <div className="bg-white px-5 pt-14 pb-5">
         <h1 className="text-3xl font-bold">Training plan</h1>
       </div>
 

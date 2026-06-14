@@ -18,7 +18,7 @@ export default function NotesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white px-5 pt-12 pb-5">
+      <div className="bg-white px-5 pt-14 pb-5">
         <div className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Weekly reviews</div>
         <h1 className="text-3xl font-bold">Coach Notes</h1>
       </div>

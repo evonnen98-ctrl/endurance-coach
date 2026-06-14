@@ -20,20 +20,20 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Global profile button — fixed inside max-width container */}
-      <div className="fixed top-0 left-0 right-0 z-30 pointer-events-none">
-        <div className="max-w-[900px] mx-auto relative h-0">
+      {/* Fixed top header bar — same height/position on every page */}
+      <header className="fixed top-0 left-0 right-0 h-12 bg-white z-40">
+        <div className="max-w-[860px] mx-auto h-full flex items-center justify-end px-5">
           <button
             onClick={() => setShowProfile(true)}
-            className="absolute top-11 right-4 pointer-events-auto p-2 rounded-full hover:bg-gray-100 transition-colors"
+            className="p-2 rounded-full hover:bg-gray-100 transition-colors"
             aria-label="Profile & settings"
           >
-            <User size={18} className="text-gray-400" />
+            <User size={18} className="text-gray-500" />
           </button>
         </div>
-      </div>
+      </header>
 
-      <main className="pb-24 min-h-screen max-w-[900px] mx-auto">
+      <main className="pb-24 min-h-screen max-w-[860px] mx-auto">
         <Outlet />
       </main>
       <BottomNav />

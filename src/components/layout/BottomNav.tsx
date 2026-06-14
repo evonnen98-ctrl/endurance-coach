@@ -1,19 +1,19 @@
 import { NavLink } from 'react-router-dom'
-import { Home, Calendar, TrendingUp, FileText, Clock } from 'lucide-react'
+import { Home, Calendar, TrendingUp, MessageCircle, Clock } from 'lucide-react'
 import clsx from 'clsx'
 
 const tabs = [
   { to: '/today',    label: 'TODAY',    Icon: Home },
   { to: '/plan',     label: 'PLAN',     Icon: Calendar },
   { to: '/progress', label: 'PROGRESS', Icon: TrendingUp },
-  { to: '/notes',    label: 'NOTES',    Icon: FileText },
+  { to: '/coach',    label: 'COACH',    Icon: MessageCircle },
   { to: '/history',  label: 'HISTORY',  Icon: Clock },
 ]
 
 export default function BottomNav() {
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 safe-bottom z-40">
-      <div className="max-w-[900px] mx-auto flex">
+      <div className="max-w-[860px] mx-auto flex">
         {tabs.map(({ to, label, Icon }) => (
           <NavLink
             key={to}
