@@ -87,7 +87,7 @@ function buildDescription(disc: string, type: string, km: number, targetPace: st
       return `10min warm-up + ${reps}×${repDist}${pace} with 90s recovery + 10min cool-down`
     }
     if (type === 'tempo') {
-      const mainKm = parseFloat((km * 0.65).toFixed(1))
+      const mainKm = Math.round(km * 0.65)
       return `10min easy warm-up + ${mainKm}km tempo${pace} + 10min cool-down`
     }
     return `${km}km easy${pace} — conversational pace throughout`
@@ -174,6 +174,8 @@ function detectGoalType(goalType: string): string {
   if (g.includes('10km') || g.includes('10k')) return '10km'
   if (g.includes('5km') || g.includes('5k')) return '5km'
   if (g.includes('century') || g.includes('gran fondo') || g.includes('100km')) return 'century_ride'
+  if (g.includes('ultra')) return 'marathon'
+  if (g.includes('stage race')) return 'century_ride'
   if (g.includes('maintain')) return 'maintain'
   return 'general'
 }
@@ -245,10 +247,7 @@ function getCapsForGoal(level: FitnessLevel, goalRaw: string): VolumeCap {
   return caps[goal]?.[level] ?? fallback[level] ?? fallback.intermediate
 }
 
-// ── BUG 5: Taper config by goal type ─────────────────────────────────────────
-// Short events (5km, 10km): 1 taper week
-// Medium events (HM, Olympic/Sprint tri): 2 taper weeks
-// Long events (Marathon, 70.3, Ironman): 3 taper weeks, peak at W9
+// ── Taper config by goal type ─────────────────────────────────────────────────
 
 interface TaperConfig {
   multipliers: readonly number[]
@@ -257,62 +256,275 @@ interface TaperConfig {
 
 function getTaperConfig(goalRaw: string): TaperConfig {
   const goal = detectGoalType(goalRaw)
-
   if (goal === 'marathon' || goal === '70.3' || goal === 'ironman') {
     return {
-      // Peak at W9 (×1.30), 3-week taper: W10=0.85, W11=0.70, W12=0.50
       multipliers:    [1.00, 1.05, 1.10, 0.85, 1.15, 1.20, 1.25, 0.90, 1.30, 0.85, 0.70, 0.50],
       peakMultiplier: 1.30,
     }
   }
   if (goal === 'half_marathon' || goal === 'olympic_tri' || goal === 'sprint_tri') {
     return {
-      // Peak at W10 (×1.35), 2-week taper: W11=0.80, W12=0.55
       multipliers:    [1.00, 1.05, 1.10, 0.85, 1.15, 1.20, 1.25, 0.90, 1.30, 1.35, 0.80, 0.55],
       peakMultiplier: 1.35,
     }
   }
-  // Default: 5km, 10km, century_ride, general, maintain — 1 taper week
   return {
     multipliers:    [1.00, 1.05, 1.10, 0.85, 1.15, 1.20, 1.25, 0.90, 1.30, 1.35, 1.15, 0.65],
     peakMultiplier: 1.35,
   }
 }
 
-// ── Day selection ─────────────────────────────────────────────────────────────
-// Returns [preferredDayIdx, ...others] unsorted. Index 0 is always the primary (long) day.
+// ── Template-based weekly schedule ───────────────────────────────────────────
+//
+// Returns an ordered list of { disc, type, kmShare, minPerKm } slots.
+// kmShare is a fraction of the weekly volume for that discipline.
+// Slots are placed starting from Monday (day 0), with rest days inserted
+// to honour the "long ride and long run separated by 2+ days" rule.
+//
+// The day indices returned are the absolute 0-6 (Mon-Sun) positions.
+// preferred_long_day shifts where the long ride lands within the week.
 
-function selectSessionDays(
-  numSessions: number,
-  preferredDayIdx: number,
-  excludedIdxs: Set<number>,
-): number[] {
-  if (numSessions <= 0) return []
+interface Slot {
+  disc: 'run' | 'ride' | 'swim'
+  type: string
+  kmShare: number  // fraction of weekly km for this disc
+  minPerKm: number // minutes per km (used for duration estimate)
+}
 
-  let startDay = preferredDayIdx
-  if (excludedIdxs.has(startDay)) {
-    for (let offset = 1; offset <= 6; offset++) {
-      const candidate = (preferredDayIdx + offset) % 7
-      if (!excludedIdxs.has(candidate)) { startDay = candidate; break }
+type DisciplineSet = 'run' | 'ride' | 'swim' | 'run+ride' | 'run+swim' | 'ride+swim' | 'all'
+
+function classifyDisciplines(disciplines: string[]): DisciplineSet {
+  const hasRun  = disciplines.includes('run')
+  const hasRide = disciplines.includes('ride')
+  const hasSwim = disciplines.includes('swim')
+  if (hasRun && hasRide && hasSwim) return 'all'
+  if (hasRun && hasRide) return 'run+ride'
+  if (hasRun && hasSwim) return 'run+swim'
+  if (hasRide && hasSwim) return 'ride+swim'
+  if (hasRun)  return 'run'
+  if (hasRide) return 'ride'
+  if (hasSwim) return 'swim'
+  return 'run' // safe default
+}
+
+// Returns { day (0-6), slot } pairs for a given daysPerWeek + discipline set.
+// Long ride on longRideDay; long run on longRunDay (always 2+ days away from ride).
+function buildWeekTemplate(
+  daysPerWeek: number,
+  discSet: DisciplineSet,
+  longDayIdx: number,         // preferred long session day (0-6)
+  level: FitnessLevel,
+  hasQuality: boolean,        // whether quality sessions are allowed
+): Array<{ dayIdx: number; slot: Slot }> {
+
+  // For single-discipline athletes the long day is the preferred day.
+  // For triathlon we put the long RIDE on preferred day and long RUN 2 days later.
+  const longRideDay = longDayIdx
+  const longRunDay  = (longDayIdx + 2) % 7
+
+  // ----- Single discipline templates -----
+  if (discSet === 'run' || discSet === 'ride' || discSet === 'swim') {
+    const disc = discSet as 'run' | 'ride' | 'swim'
+    const minPerKm = disc === 'run' ? 6.5 : disc === 'ride' ? 2.2 : 30
+
+    // Place the long session on preferred day, spread others as far apart as possible
+    const slots: Slot[] = []
+
+    // Long session first
+    slots.push({ disc, type: 'long', kmShare: 0, minPerKm })
+
+    // Fill remaining sessions
+    const n = daysPerWeek
+    for (let i = 1; i < n; i++) {
+      const isQuality = hasQuality && i === n - 1  // last non-long slot gets quality
+      const isSecondQuality = hasQuality && i === n - 2 && level !== 'intermediate'
+      const type = (isQuality || isSecondQuality) ? (i % 2 === 0 ? 'interval' : 'tempo') : 'easy'
+      slots.push({ disc, type, kmShare: 0, minPerKm })
+    }
+
+    // Assign km shares: long gets longPct, rest split evenly
+    const longPct = n === 2 ? 0.55 : n >= 4 ? 0.35 : 0.45
+    slots[0].kmShare = longPct
+    const restPct = (1 - longPct) / Math.max(1, n - 1)
+    for (let i = 1; i < slots.length; i++) {
+      const t = slots[i].type
+      slots[i].kmShare = restPct * (t === 'interval' ? 0.7 : t === 'tempo' ? 0.9 : 1.1)
+    }
+    // Normalise so shares sum to 1
+    const total = slots.reduce((s, sl) => s + sl.kmShare, 0)
+    slots.forEach(sl => { sl.kmShare /= total })
+
+    // Spread day indices: long day first, then greedy max-gap
+    const dayIdxs = spreadDays(n, longDayIdx)
+    return dayIdxs.map((dayIdx, i) => ({ dayIdx, slot: slots[i] }))
+  }
+
+  // ----- Multi-discipline templates -----
+  // Triathlete (all) or duathlete (run+ride / run+swim / ride+swim)
+  const hasRun  = discSet === 'all' || discSet.startsWith('run')  || discSet.endsWith('run')
+  const hasRide = discSet === 'all' || discSet.startsWith('ride') || discSet.endsWith('ride')
+  const hasSwim = discSet === 'all' || discSet.startsWith('swim') || discSet.endsWith('swim')
+
+  type Entry = { dayIdx: number; disc: 'run' | 'ride' | 'swim'; type: string; kmShare: number; minPerKm: number }
+  const entries: Entry[] = []
+
+  // Templates by daysPerWeek for triathlete (adjust for duathletes by removing swim)
+  // Each entry: [discipline, type, day-offset-from-Monday]
+  // We always anchor long-ride on longRideDay and long-run on longRunDay.
+
+  if (daysPerWeek <= 3) {
+    // 3 days: one of each (swim optional if no swim disc)
+    const plan: Array<[string, string, number]> = []
+    if (hasSwim) plan.push(['swim', 'base',  0])
+    if (hasRide) plan.push(['ride', 'long',  longRideDay - (longRideDay > 2 ? 2 : 0)])
+    if (hasRun)  plan.push(['run',  'long',  longRunDay])
+    // Fill to 3 if short
+    const actual = plan.slice(0, 3)
+    actual.forEach(([disc, type, dayIdx]) => {
+      if ((disc === 'run'  && !hasRun)  ||
+          (disc === 'ride' && !hasRide) ||
+          (disc === 'swim' && !hasSwim)) return
+      entries.push({ dayIdx, disc: disc as 'run'|'ride'|'swim', type, kmShare: 0, minPerKm: disc === 'run' ? 6.5 : disc === 'ride' ? 2.2 : 30 })
+    })
+  } else if (daysPerWeek === 4) {
+    // Day 0: Swim easy / or ride easy if no swim
+    // Day 2: Run easy
+    // Day 4: Ride long  ← longRideDay
+    // Day 6: Run long   ← longRunDay
+    if (hasSwim) entries.push({ dayIdx: (longRideDay + 4) % 7, disc: 'swim', type: 'base',  kmShare: 0, minPerKm: 30 })
+    else if (hasRide) entries.push({ dayIdx: (longRideDay + 5) % 7, disc: 'ride', type: 'easy', kmShare: 0, minPerKm: 2.2 })
+    if (hasRun)  entries.push({ dayIdx: (longRideDay + 2) % 7, disc: 'run',  type: 'easy',  kmShare: 0, minPerKm: 6.5 })
+    if (hasRide) entries.push({ dayIdx: longRideDay,            disc: 'ride', type: 'long',  kmShare: 0, minPerKm: 2.2 })
+    if (hasRun)  entries.push({ dayIdx: longRunDay,             disc: 'run',  type: 'long',  kmShare: 0, minPerKm: 6.5 })
+  } else if (daysPerWeek === 5) {
+    // Day A: Swim easy
+    // Day B: Run easy
+    // Day C: Ride tempo/easy
+    // Day D: Swim intervals (if tri) or Run tempo (if no swim)
+    // Day E: Ride long (longRideDay)
+    // Day F: Run long  (longRunDay)
+    // Anchor E and F, spread A-D around them
+    const anchor1 = longRideDay
+    const anchor2 = longRunDay
+    const other: number[] = []
+    for (let d = 0; d < 7; d++) {
+      if (d !== anchor1 && d !== anchor2) other.push(d)
+    }
+    // Pick 3 non-anchor days, maximally spread from anchors
+    const spread3 = pickSpread(other, 3, [anchor1, anchor2])
+
+    if (hasSwim) {
+      entries.push({ dayIdx: spread3[0], disc: 'swim', type: 'base',     kmShare: 0, minPerKm: 30 })
+      entries.push({ dayIdx: spread3[2], disc: 'swim', type: 'interval', kmShare: 0, minPerKm: 30 })
+    } else if (hasRun) {
+      entries.push({ dayIdx: spread3[0], disc: 'run', type: 'easy',  kmShare: 0, minPerKm: 6.5 })
+      entries.push({ dayIdx: spread3[2], disc: 'run', type: hasQuality ? 'tempo' : 'easy', kmShare: 0, minPerKm: 5.5 })
+    }
+    if (hasRun)  entries.push({ dayIdx: spread3[1], disc: 'run',  type: 'easy',  kmShare: 0, minPerKm: 6.5 })
+    if (hasRide) entries.push({ dayIdx: anchor1,    disc: 'ride', type: 'long',  kmShare: 0, minPerKm: 2.2 })
+    if (hasRun)  entries.push({ dayIdx: anchor2,    disc: 'run',  type: 'long',  kmShare: 0, minPerKm: 6.5 })
+  } else {
+    // 6 days: full triathlete week
+    // Mon: Swim easy
+    // Tue: Run easy
+    // Wed: Ride tempo
+    // Thu: Run tempo/intervals
+    // Fri: Swim intervals
+    // Sat: Ride long   ← longRideDay
+    // Sun: Run long    ← longRunDay
+    // Anchor long ride + long run, fill the 4 remaining slots
+    const anchor1 = longRideDay
+    const anchor2 = longRunDay
+    const others: number[] = []
+    for (let d = 0; d < 7; d++) {
+      if (d !== anchor1 && d !== anchor2) others.push(d)
+    }
+    const spread4 = pickSpread(others, 4, [anchor1, anchor2])
+
+    if (hasSwim) {
+      entries.push({ dayIdx: spread4[0], disc: 'swim', type: 'base',     kmShare: 0, minPerKm: 30 })
+      entries.push({ dayIdx: spread4[3], disc: 'swim', type: 'interval', kmShare: 0, minPerKm: 30 })
+    }
+    if (hasRun) {
+      entries.push({ dayIdx: spread4[1], disc: 'run',  type: 'easy',  kmShare: 0, minPerKm: 6.5 })
+      entries.push({ dayIdx: spread4[2], disc: 'run',  type: hasQuality ? 'tempo' : 'easy', kmShare: 0, minPerKm: 5.5 })
+    }
+    if (hasRide) entries.push({ dayIdx: anchor1, disc: 'ride', type: 'long', kmShare: 0, minPerKm: 2.2 })
+    if (hasRun)  entries.push({ dayIdx: anchor2, disc: 'run',  type: 'long', kmShare: 0, minPerKm: 6.5 })
+
+    // Add a non-long ride if we still have room
+    const used = new Set(entries.map(e => e.dayIdx))
+    if (hasRide && entries.length < daysPerWeek) {
+      const rideDay = others.find(d => !used.has(d))
+      if (rideDay !== undefined) {
+        entries.push({ dayIdx: rideDay, disc: 'ride', type: hasQuality ? 'tempo' : 'easy', kmShare: 0, minPerKm: 2.2 })
+      }
     }
   }
 
-  const result: number[] = [startDay]
+  // Remove duplicate disciplines on same day (keep first occurrence — should not happen with templates but be safe)
+  const seen = new Map<string, boolean>()
+  const deduped = entries.filter(e => {
+    const key = `${e.dayIdx}-${e.disc}`
+    if (seen.has(key)) return false
+    seen.set(key, true)
+    return true
+  })
 
-  for (let i = 1; i < numSessions; i++) {
-    let bestDay = -1
-    let bestScore = -1
+  // Assign km shares per discipline
+  const runEntries  = deduped.filter(e => e.disc === 'run')
+  const rideEntries = deduped.filter(e => e.disc === 'ride')
+  const swimEntries = deduped.filter(e => e.disc === 'swim')
+
+  assignShares(runEntries)
+  assignShares(rideEntries)
+  assignShares(swimEntries)
+
+  return deduped.map(e => ({ dayIdx: e.dayIdx, slot: { disc: e.disc, type: e.type, kmShare: e.kmShare, minPerKm: e.minPerKm } }))
+}
+
+// Assign km shares within a set of same-discipline slots
+function assignShares(entries: Array<{ type: string; kmShare: number }>) {
+  if (entries.length === 0) return
+  const weights = entries.map(e => e.type === 'long' ? 2.0 : e.type === 'tempo' ? 0.9 : e.type === 'interval' ? 0.7 : 1.0)
+  const total = weights.reduce((s, w) => s + w, 0)
+  entries.forEach((e, i) => { e.kmShare = weights[i] / total })
+}
+
+// Spread n days across 0-6 starting from preferred, maximally separated
+function spreadDays(n: number, preferred: number): number[] {
+  const result: number[] = [preferred]
+  for (let i = 1; i < n; i++) {
+    let best = -1, bestScore = -1
     for (let d = 0; d < 7; d++) {
-      if (excludedIdxs.has(d) || result.includes(d)) continue
+      if (result.includes(d)) continue
       const minDist = Math.min(...result.map(r => {
         const diff = Math.abs(r - d)
         return Math.min(diff, 7 - diff)
       }))
-      if (minDist > bestScore) { bestScore = minDist; bestDay = d }
+      if (minDist > bestScore) { bestScore = minDist; best = d }
     }
-    if (bestDay !== -1) result.push(bestDay)
+    if (best !== -1) result.push(best)
   }
+  return result
+}
 
+// Pick `n` days from `candidates`, maximally spread from `anchors`
+function pickSpread(candidates: number[], n: number, anchors: number[]): number[] {
+  const result: number[] = []
+  const avoid = new Set([...anchors])
+  for (let i = 0; i < n && candidates.length > 0; i++) {
+    let best = candidates[0], bestScore = -1
+    for (const d of candidates) {
+      if (avoid.has(d)) continue
+      const minDist = Math.min(...[...avoid].map(r => {
+        const diff = Math.abs(r - d); return Math.min(diff, 7 - diff)
+      }))
+      if (minDist > bestScore) { bestScore = minDist; best = d }
+    }
+    result.push(best)
+    avoid.add(best)
+  }
   return result
 }
 
@@ -320,6 +532,11 @@ function selectSessionDays(
 
 function buildBaseWeek(ctx: UserContext, taperConfig: TaperConfig): AiSession[] {
   const { disciplines, training_phase, preferences } = ctx.user
+
+  // Discipline filtering — ONLY create sessions for athlete's chosen disciplines
+  const allowedDiscs = new Set(disciplines.filter(d => ['run', 'ride', 'swim'].includes(d)))
+  if (allowedDiscs.size === 0) allowedDiscs.add('run') // safe default
+
   const level       = ((preferences.fitness_level as string) ?? 'intermediate') as FitnessLevel
   const daysPerWeek = Math.min(Number(preferences.training_days_per_week) || 4, 7)
   const longDayRaw  = (preferences.preferred_long_day as string ?? 'Saturday')
@@ -330,13 +547,11 @@ function buildBaseWeek(ctx: UserContext, taperConfig: TaperConfig): AiSession[] 
   const startPct    = isReturn ? 0.60 : 0.90
   const { peakMultiplier } = taperConfig
 
-  const maxQuality = (level === 'beginner' || isReturn) ? 0
-    : level === 'intermediate' ? 1
-    : 2
+  const hasQuality = level !== 'beginner' && !isReturn
 
-  // Week-1 km: 90% of current, capped so peak week never exceeds the goal cap
+  // Week-1 km per discipline, capped so peak never exceeds goal cap
   function w1km(disc: string, cap: number): number {
-    if (!disciplines.includes(disc) || cap === 0) return 0
+    if (!allowedDiscs.has(disc) || cap === 0) return 0
     const cur = Number((preferences as Record<string, unknown>)[`${disc}_weekly_km`]) || 0
     const maxStart = cap / peakMultiplier
     if (cur > 0) return Math.min(cur * startPct, maxStart)
@@ -348,150 +563,50 @@ function buildBaseWeek(ctx: UserContext, taperConfig: TaperConfig): AiSession[] 
   const swimKmWeek = w1km('swim', caps.swim)
 
   console.log('[PLAN] ── VOLUME DIAGNOSTICS ──')
-  console.log('[PLAN] FITNESS_LEVEL:   ', level, ' (raw pref:', preferences.fitness_level, ')')
-  console.log('[PLAN] TRAINING_DAYS:   ', daysPerWeek, ' (raw pref:', preferences.training_days_per_week, ')')
-  console.log('[PLAN] CURRENT_VOLUMES: ', {
+  console.log('[PLAN] FITNESS_LEVEL:     ', level, ' (raw pref:', preferences.fitness_level, ')')
+  console.log('[PLAN] TRAINING_DAYS:     ', daysPerWeek, ' (raw pref:', preferences.training_days_per_week, ')')
+  console.log('[PLAN] ALLOWED_DISCS:     ', [...allowedDiscs])
+  console.log('[PLAN] CURRENT_VOLUMES:   ', {
     run:  Number((preferences as Record<string, unknown>).run_weekly_km)  || 0,
     ride: Number((preferences as Record<string, unknown>).ride_weekly_km) || 0,
     swim: Number((preferences as Record<string, unknown>).swim_weekly_km) || 0,
   })
-  console.log('[PLAN] GOAL:            ', goalType, ' → detected:', detectGoalType(goalType))
-  console.log('[PLAN] CAPS_USED:       ', caps)
-  console.log('[PLAN] W1_VOLUMES:      ', { run: runKmWeek.toFixed(1), ride: rideKmWeek.toFixed(1), swim: swimKmWeek.toFixed(1) })
+  console.log('[PLAN] GOAL:              ', goalType, '→ detected:', detectGoalType(goalType))
+  console.log('[PLAN] CAPS_USED:         ', caps)
+  console.log('[PLAN] W1_VOLUMES:        ', { run: runKmWeek.toFixed(1), ride: rideKmWeek.toFixed(1), swim: swimKmWeek.toFixed(1) })
   console.log('[PLAN] ─────────────────────────')
 
-  // ── BUG 1: Compute session counts then clamp total to daysPerWeek ──────────
-  // Trim swim first (least race-critical), then ride, then run.
-  let numRun  = runKmWeek  > 0 ? (disciplines.length === 1 ? daysPerWeek : Math.max(2, Math.floor(daysPerWeek * 0.45))) : 0
-  let numRide = rideKmWeek > 0 ? (disciplines.length === 1 ? daysPerWeek : Math.max(1, Math.round(daysPerWeek / disciplines.length))) : 0
-  let numSwim = swimKmWeek > 0 ? Math.max(1, Math.round(daysPerWeek / disciplines.length)) : 0
-
-  let overflow = (numRun + numRide + numSwim) - daysPerWeek
-  if (overflow > 0) {
-    const trimSwim = Math.min(overflow, Math.max(0, numSwim - 1))
-    numSwim  -= trimSwim
-    overflow -= trimSwim
-  }
-  if (overflow > 0) {
-    const trimRide = Math.min(overflow, Math.max(0, numRide - 1))
-    numRide  -= trimRide
-    overflow -= trimRide
-  }
-  if (overflow > 0) {
-    const trimRun = Math.min(overflow, Math.max(0, numRun - 1))
-    numRun -= trimRun
-  }
-
-  console.log('[PLAN] Session counts:', { numRun, numRide, numSwim, total: numRun + numRide + numSwim, daysPerWeek })
-  console.log('[PLAN] Week-1 volumes:', {
-    run: runKmWeek.toFixed(1), ride: rideKmWeek.toFixed(1), swim: swimKmWeek.toFixed(1),
-  })
+  const discSet = classifyDisciplines([...allowedDiscs])
+  const template = buildWeekTemplate(daysPerWeek, discSet, longDayIdx, level, hasQuality)
 
   const sessions: AiSession[] = []
-  const usedDays = new Set<number>()
 
-  // ── RUN sessions ──────────────────────────────────────────────────────────
-  if (numRun > 0 && runKmWeek > 0) {
-    // BUG 2: When numRun=2, use 55/45 so long is always the longest session.
-    //        When numRun≥3, use 40/60 spread across multiple shorter sessions.
-    const longPct = numRun === 2 ? 0.55 : 0.40
-    const longKm  = parseFloat((runKmWeek * longPct).toFixed(1))
-    const restKm  = runKmWeek - longKm
-    const numOther = numRun - 1
-    const eachKm  = numOther > 0 ? parseFloat((restKm / numOther).toFixed(1)) : 0
+  for (const { dayIdx, slot } of template) {
+    const { disc, type, kmShare, minPerKm } = slot
 
-    const runDayIdxs = selectSessionDays(numRun, longDayIdx, usedDays)
-    runDayIdxs.forEach(d => usedDays.add(d))
+    // Skip if discipline not allowed (belt-and-suspenders after template)
+    if (!allowedDiscs.has(disc)) continue
 
-    let qualityAdded = 0
+    const weeklyKm = disc === 'run' ? runKmWeek : disc === 'ride' ? rideKmWeek : swimKmWeek
+    if (weeklyKm <= 0) continue
 
-    runDayIdxs.forEach((dayIdx, pos) => {
-      const isLong = pos === 0
+    const rawKm  = weeklyKm * kmShare
+    const km     = Math.max(1, Math.round(rawKm))
 
-      if (isLong) {
-        sessions.push({
-          day:  ALL_DAYS[dayIdx],
-          disc: 'run',
-          type: 'long',
-          km:   longKm,
-          min:  Math.round(longKm * 7.0),
-        })
-      } else {
-        const nonLongDone      = pos - 1
-        const remainingNonLong = numOther - nonLongDone
+    const baseMin = disc === 'run'
+      ? Math.round(km * (type === 'interval' ? 5.0 : type === 'tempo' ? 5.5 : 6.5))
+      : disc === 'ride'
+        ? Math.round(km * 2.2)
+        : Math.round(km * 30)
 
-        // BUG 3: Guard relaxed to numOther >= 1 so a 2-run plan (1 long + 1 other)
-        //        can still assign a quality session for intermediate+ athletes.
-        const canDoQuality = qualityAdded < maxQuality
-          && remainingNonLong <= (maxQuality - qualityAdded + 1)
-          && numOther >= 1
+    const min = type === 'interval' ? baseMin + 20 : baseMin
 
-        const type = canDoQuality
-          ? (qualityAdded === 0 ? 'tempo' : 'interval')
-          : 'easy'
-        if (canDoQuality) qualityAdded++
-
-        // BUG 4: Vary session distance by type so they're not all identical.
-        //        interval < tempo < easy, centred around eachKm average.
-        const typeMultiplier = type === 'interval' ? 0.7 : type === 'tempo' ? 0.9 : 1.1
-        const sessionKm = parseFloat((eachKm * typeMultiplier).toFixed(1))
-
-        // BUG 6: Interval sessions under-report duration — add 20min for warmup/cooldown.
-        const minPerKm = type === 'tempo' ? 5.5 : type === 'interval' ? 5.0 : 6.5
-        const baseMins = Math.round(sessionKm * minPerKm)
-        const mins     = type === 'interval' ? baseMins + 20 : baseMins
-
-        sessions.push({
-          day:  ALL_DAYS[dayIdx],
-          disc: 'run',
-          type,
-          km:   sessionKm,
-          min:  mins,
-        })
-      }
-    })
-  }
-
-  // ── RIDE sessions ─────────────────────────────────────────────────────────
-  if (numRide > 0 && rideKmWeek > 0) {
-    const rideLongKm   = parseFloat((rideKmWeek * 0.55).toFixed(1))
-    const numRideOther = numRide - 1
-    const rideEachKm   = numRideOther > 0
-      ? parseFloat(((rideKmWeek - rideLongKm) / numRideOther).toFixed(1))
-      : 0
-
-    const ridePrefIdx = disciplines.length === 1 ? longDayIdx : (longDayIdx + 2) % 7
-    const rideDayIdxs = selectSessionDays(numRide, ridePrefIdx, usedDays)
-    rideDayIdxs.forEach(d => usedDays.add(d))
-
-    rideDayIdxs.forEach((dayIdx, pos) => {
-      const isLong = pos === 0
-      sessions.push({
-        day:  ALL_DAYS[dayIdx],
-        disc: 'ride',
-        type: isLong ? 'long' : 'easy',
-        km:   isLong ? rideLongKm : rideEachKm,
-        min:  Math.round((isLong ? rideLongKm : rideEachKm) * 2.2),
-      })
-    })
-  }
-
-  // ── SWIM sessions ─────────────────────────────────────────────────────────
-  if (numSwim > 0 && swimKmWeek > 0) {
-    const swimEachKm = parseFloat((swimKmWeek / numSwim).toFixed(1))
-
-    const swimPrefIdx = (longDayIdx + 3) % 7
-    const swimDayIdxs = selectSessionDays(numSwim, swimPrefIdx, usedDays)
-    swimDayIdxs.forEach(d => usedDays.add(d))
-
-    swimDayIdxs.forEach((dayIdx, pos) => {
-      sessions.push({
-        day:  ALL_DAYS[dayIdx],
-        disc: 'swim',
-        type: pos === 0 ? 'base' : 'interval',
-        km:   swimEachKm,
-        min:  Math.round(swimEachKm * 30),
-      })
+    sessions.push({
+      day:  ALL_DAYS[dayIdx],
+      disc,
+      type,
+      km:   Math.round(km),
+      min:  Math.round(min),
     })
   }
 
@@ -499,8 +614,9 @@ function buildBaseWeek(ctx: UserContext, taperConfig: TaperConfig): AiSession[] 
     (DAY_INDEX[a.day.toLowerCase()] ?? 0) - (DAY_INDEX[b.day.toLowerCase()] ?? 0),
   )
 
-  console.log('[PLAN] Base week:', sorted.map(s => `${s.day} ${s.disc} ${s.type} ${s.km}km`))
-  console.log('[PLAN] Base week total km:', sorted.reduce((sum, s) => sum + s.km, 0).toFixed(1))
+  console.log('[PLAN] Base week:', sorted.map(s => `${s.day} ${s.disc} ${s.type} ${s.km}km ${s.min}min`))
+  console.log('[PLAN] Disciplines in plan:', [...new Set(sorted.map(s => s.disc))])
+  console.log('[PLAN] Total km W1:', sorted.reduce((sum, s) => sum + s.km, 0))
 
   return sorted
 }
@@ -515,8 +631,8 @@ function expandToTwelveWeeks(
     week: i + 1,
     sessions: baseSessions.map(s => ({
       ...s,
-      km:  parseFloat((s.km  * mult).toFixed(1)),
-      min: Math.round(s.min * mult),
+      km:  Math.max(1, Math.round(s.km  * mult)),
+      min: Math.max(10, Math.round(s.min * mult)),
     })),
   }))
 }
@@ -541,8 +657,10 @@ function sessionsToRows(
         const discCap = disc.charAt(0).toUpperCase() + disc.slice(1)
         const targetPace = computeTargetPace(disc, typeKey, prefs)
         const effortZone = EFFORT_ZONES[typeKey] ?? 'Zone 2'
-        const description = buildDescription(disc, typeKey, Number(s.km) || 5, targetPace)
-        const structure   = buildStructure(disc, typeKey, Number(s.km) || 5, targetPace)
+        const kmRounded  = Math.round(Number(s.km) || 1)
+        const minRounded = Math.round(Number(s.min) || 30)
+        const description = buildDescription(disc, typeKey, kmRounded, targetPace)
+        const structure   = buildStructure(disc, typeKey, kmRounded, targetPace)
         const rationale   = RATIONALE[disc]?.[typeKey] ?? `${label} session — builds specific fitness for your goal.`
         return {
           plan_id:            planId,
@@ -558,8 +676,8 @@ function sessionsToRows(
           coaching_rationale: rationale,
           effort_zone:        effortZone,
           target_pace:        targetPace,
-          duration_minutes:   Number(s.min) || 60,
-          distance_km:        Number(s.km)  || null,
+          duration_minutes:   minRounded,
+          distance_km:        kmRounded,
           status:             'planned',
         }
       })
@@ -598,7 +716,7 @@ export async function generatePlanSkeleton(
 
   onProgress?.('Building your plan…')
 
-  const goalType   = context.goal?.event_type ?? (context.user.preferences.goal_event_type as string ?? '')
+  const goalType    = context.goal?.event_type ?? (context.user.preferences.goal_event_type as string ?? '')
   const taperConfig = getTaperConfig(goalType)
 
   const baseSessions = buildBaseWeek(context, taperConfig)
