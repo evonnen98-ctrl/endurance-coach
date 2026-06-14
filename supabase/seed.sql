@@ -29,7 +29,7 @@ values (
   array['swim','ride','run'],
   'race', 'moderate', 240,
   'pool', true,
-  '{"run_pace_easy":"5:20/km","swim_pace_100m":"1:45","run_weekly_km":35,"ride_weekly_km":120}'::jsonb,
+  '{"fitness_level":"intermediate","training_days_per_week":6,"preferred_long_day":"Saturday","run_weekly_km":35,"ride_weekly_km":120,"swim_weekly_km":6,"run_pace_easy":"5:20/km","swim_pace_per_100m":"1:45","goal_event_type":"Olympic Tri"}'::jsonb,
   'I like long sessions on weekends. Prefer not to swim Mondays. Weekday sessions need to be under 90 mins.'
 ) on conflict (id) do nothing;
 

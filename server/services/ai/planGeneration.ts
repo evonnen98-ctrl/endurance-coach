@@ -347,6 +347,19 @@ function buildBaseWeek(ctx: UserContext, taperConfig: TaperConfig): AiSession[] 
   const rideKmWeek = w1km('ride', caps.ride)
   const swimKmWeek = w1km('swim', caps.swim)
 
+  console.log('[PLAN] ── VOLUME DIAGNOSTICS ──')
+  console.log('[PLAN] FITNESS_LEVEL:   ', level, ' (raw pref:', preferences.fitness_level, ')')
+  console.log('[PLAN] TRAINING_DAYS:   ', daysPerWeek, ' (raw pref:', preferences.training_days_per_week, ')')
+  console.log('[PLAN] CURRENT_VOLUMES: ', {
+    run:  Number((preferences as Record<string, unknown>).run_weekly_km)  || 0,
+    ride: Number((preferences as Record<string, unknown>).ride_weekly_km) || 0,
+    swim: Number((preferences as Record<string, unknown>).swim_weekly_km) || 0,
+  })
+  console.log('[PLAN] GOAL:            ', goalType, ' → detected:', detectGoalType(goalType))
+  console.log('[PLAN] CAPS_USED:       ', caps)
+  console.log('[PLAN] W1_VOLUMES:      ', { run: runKmWeek.toFixed(1), ride: rideKmWeek.toFixed(1), swim: swimKmWeek.toFixed(1) })
+  console.log('[PLAN] ─────────────────────────')
+
   // ── BUG 1: Compute session counts then clamp total to daysPerWeek ──────────
   // Trim swim first (least race-critical), then ride, then run.
   let numRun  = runKmWeek  > 0 ? (disciplines.length === 1 ? daysPerWeek : Math.max(2, Math.floor(daysPerWeek * 0.45))) : 0
@@ -590,7 +603,27 @@ export async function generatePlanSkeleton(
 
   const baseSessions = buildBaseWeek(context, taperConfig)
   const allWeeks     = expandToTwelveWeeks(baseSessions, taperConfig.multipliers)
-  const startDate    = new Date()
+
+  function nextOrSameMonday(d: Date): Date {
+    const day = d.getDay()
+    if (day === 1) return d
+    const offset = day === 0 ? 1 : 8 - day
+    const m = new Date(d)
+    m.setDate(d.getDate() + offset)
+    return m
+  }
+
+  const planStartPref = context.user.preferences.plan_start_date as string | undefined
+  const startDate = planStartPref
+    ? nextOrSameMonday(new Date(planStartPref + 'T12:00:00'))
+    : (() => {
+        const now = new Date()
+        const day = now.getDay()
+        const offset = (8 - day) % 7 || 7
+        const m = new Date(now)
+        m.setDate(now.getDate() + offset)
+        return m
+      })()
 
   console.log('[PLAN] DB insert:', Date.now())
 

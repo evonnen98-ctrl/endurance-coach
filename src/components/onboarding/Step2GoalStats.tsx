@@ -18,12 +18,22 @@ function getRaceEvents(disciplines: Discipline[]): string[] {
   return []
 }
 
+function getDefaultPlanStart(): string {
+  const now = new Date()
+  const day = now.getDay()
+  const offset = (8 - day) % 7 || 7
+  const mon = new Date(now)
+  mon.setDate(now.getDate() + offset)
+  return mon.toISOString().slice(0, 10)
+}
+
 interface Props {
   disciplines: Discipline[]
   phase: TrainingPhase
   onNext: (data: {
     eventType: string
     targetDate: string
+    planStartDate: string
     stats: Record<string, string>
     coachNote: string
   }) => void
@@ -33,6 +43,7 @@ interface Props {
 export default function Step2GoalStats({ disciplines, phase, onNext, onBack }: Props) {
   const [eventType, setEventType] = useState('')
   const [targetDate, setTargetDate] = useState('')
+  const [planStartDate, setPlanStartDate] = useState(getDefaultPlanStart)
   const [stats, setStats] = useState<Record<string, string>>({})
   const [coachNote, setCoachNote] = useState('')
   const [selectedDays, setSelectedDays] = useState<string[]>([])
@@ -237,6 +248,18 @@ export default function Step2GoalStats({ disciplines, phase, onNext, onBack }: P
         </div>
       </section>
 
+      {/* ── Plan start date ── */}
+      <section className="mb-8">
+        <h2 className="text-lg font-semibold mb-1">When do you want to start your plan?</h2>
+        <p className="text-gray-500 text-sm mb-4">Plans start on Mondays. If you pick a mid-week date, we'll start the following Monday.</p>
+        <input
+          type="date"
+          value={planStartDate}
+          onChange={e => setPlanStartDate(e.target.value)}
+          className="w-full p-3 border border-gray-200 rounded-xl text-base"
+        />
+      </section>
+
       {/* ── Coach note ── */}
       <section className="mb-8">
         <h2 className="text-lg font-semibold mb-1">Anything your coach should know?</h2>
@@ -260,6 +283,7 @@ export default function Step2GoalStats({ disciplines, phase, onNext, onBack }: P
           onClick={() => onNext({
             eventType,
             targetDate,
+            planStartDate,
             stats: { ...stats, training_days: selectedDays.join(',') },
             coachNote,
           })}

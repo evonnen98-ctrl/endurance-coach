@@ -19,6 +19,7 @@ interface OnboardingData {
   preferredLongDay: string
   eventType: string
   targetDate: string
+  planStartDate: string
   stats: Record<string, string>
   coachNote: string
 }
@@ -60,7 +61,7 @@ export default function OnboardingFlow({ existingUser }: Props) {
     setStep(s => s - 1)
   }
 
-  async function finish(patch: { eventType: string; targetDate: string; stats: Record<string, string>; coachNote: string }) {
+  async function finish(patch: { eventType: string; targetDate: string; planStartDate: string; stats: Record<string, string>; coachNote: string }) {
     const final = { ...data, ...patch } as OnboardingData
 
     setBuildMessage('Connecting to your coach…')
@@ -78,6 +79,7 @@ export default function OnboardingFlow({ existingUser }: Props) {
     if (final.trainingDaysPerWeek)       preferences.training_days_per_week = final.trainingDaysPerWeek
     if (final.preferredLongDay)          preferences.preferred_long_day     = final.preferredLongDay
     if (final.eventType)                 preferences.goal_event_type        = final.eventType
+    if (final.planStartDate)             preferences.plan_start_date        = final.planStartDate
 
     // Archive any existing active plan so a fresh one gets generated
     await supabase
