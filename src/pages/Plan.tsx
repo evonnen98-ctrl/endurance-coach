@@ -6,13 +6,24 @@ import WeekSection from '../components/plan/WeekSection'
 export default function PlanPage() {
   const today = new Date()
 
+  const { data: activePlanId } = useQuery({
+    queryKey: ['active-plan-id'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('training_plans').select('id').eq('user_id', DEMO_USER_ID).eq('status', 'active')
+        .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      return data?.id ?? null
+    },
+  })
+
   const { data: sessions = [], isLoading } = useQuery({
-    queryKey: ['all-sessions'],
+    queryKey: ['all-sessions', activePlanId],
+    enabled: activePlanId != null,
     queryFn: async () => {
       const { data } = await supabase
         .from('sessions')
         .select('*')
-        .eq('user_id', DEMO_USER_ID)
+        .eq('plan_id', activePlanId!)
         .order('scheduled_date')
       return (data ?? []) as Session[]
     },

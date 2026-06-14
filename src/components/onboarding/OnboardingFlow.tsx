@@ -81,12 +81,16 @@ export default function OnboardingFlow({ existingUser }: Props) {
     if (final.eventType)                 preferences.goal_event_type        = final.eventType
     if (final.planStartDate)             preferences.plan_start_date        = final.planStartDate
 
-    // Archive any existing active plan so a fresh one gets generated
-    await supabase
+    // Delete any existing plans and their sessions so a clean plan is generated
+    const { data: oldPlans } = await supabase
       .from('training_plans')
-      .update({ status: 'archived' })
+      .select('id')
       .eq('user_id', DEMO_USER_ID)
-      .eq('status', 'active')
+    if (oldPlans?.length) {
+      const oldIds = oldPlans.map(p => p.id)
+      await supabase.from('sessions').delete().in('plan_id', oldIds)
+      await supabase.from('training_plans').delete().in('id', oldIds)
+    }
 
     await Promise.all([
       supabase.from('users').upsert({
@@ -130,6 +134,7 @@ export default function OnboardingFlow({ existingUser }: Props) {
     await supabase.from('users').update({ onboarding_complete: true }).eq('id', DEMO_USER_ID)
     await queryClient.refetchQueries({ queryKey: ['user'] })
     await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['active-plan-id'] }),
       queryClient.invalidateQueries({ queryKey: ['all-sessions'] }),
       queryClient.invalidateQueries({ queryKey: ['week-sessions'] }),
       queryClient.invalidateQueries({ queryKey: ['today-session'] }),

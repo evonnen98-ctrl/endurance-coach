@@ -31,25 +31,37 @@ export default function TodayPage() {
     },
   })
 
-  const { data: todaySession } = useQuery({
-    queryKey: ['today-session', TODAY_STR],
+  const { data: activePlanId } = useQuery({
+    queryKey: ['active-plan-id'],
     queryFn: async () => {
       const { data } = await supabase
-        .from('sessions').select('*').eq('user_id', DEMO_USER_ID)
-        .eq('scheduled_date', TODAY_STR).order('day_of_week').limit(1).single()
-      return data as Session | null
+        .from('training_plans').select('id').eq('user_id', DEMO_USER_ID).eq('status', 'active')
+        .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      return data?.id ?? null
+    },
+  })
+
+  const { data: todaySession } = useQuery({
+    queryKey: ['today-session', TODAY_STR, activePlanId],
+    enabled: activePlanId != null,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('sessions').select('*').eq('plan_id', activePlanId!)
+        .eq('scheduled_date', TODAY_STR).order('day_of_week').limit(1).maybeSingle()
+      return (data ?? null) as Session | null
     },
   })
 
   const { data: weekSessions = [] } = useQuery({
-    queryKey: ['week-sessions', TODAY_STR],
+    queryKey: ['week-sessions', TODAY_STR, activePlanId],
+    enabled: activePlanId != null,
     queryFn: async () => {
       const dayOfWeek = TODAY.getDay()
       const offset = (dayOfWeek + 6) % 7
       const mon = new Date(TODAY); mon.setDate(TODAY.getDate() - offset)
       const sun = new Date(mon);  sun.setDate(mon.getDate() + 6)
       const { data } = await supabase
-        .from('sessions').select('*').eq('user_id', DEMO_USER_ID)
+        .from('sessions').select('*').eq('plan_id', activePlanId!)
         .gte('scheduled_date', format(mon, 'yyyy-MM-dd'))
         .lte('scheduled_date', format(sun, 'yyyy-MM-dd'))
         .order('day_of_week')
@@ -59,17 +71,18 @@ export default function TodayPage() {
 
   // Mark yesterday's planned sessions as missed
   useEffect(() => {
+    if (!activePlanId) return
     async function markMissed() {
       const { data } = await supabase
         .from('sessions').select('id')
-        .eq('user_id', DEMO_USER_ID).eq('scheduled_date', YESTERDAY).eq('status', 'planned')
+        .eq('plan_id', activePlanId!).eq('scheduled_date', YESTERDAY).eq('status', 'planned')
       if (data?.length) {
         await supabase.from('sessions').update({ status: 'missed' }).in('id', data.map(s => s.id))
         queryClient.invalidateQueries({ queryKey: ['week-sessions'] })
       }
     }
     markMissed()
-  }, [])
+  }, [activePlanId])
 
   const daysUntilRace = goal?.target_date
     ? differenceInDays(parseISO(goal.target_date), TODAY)
