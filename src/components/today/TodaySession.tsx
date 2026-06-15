@@ -24,6 +24,15 @@ const COMPLETION_ACKS: Record<string, string> = {
   rest:     'Rest day logged. This is part of the plan.',
 }
 
+const DISCIPLINE_EMOJI: Record<string, string> = {
+  swim: '🏊', ride: '🚴', run: '🏃', brick: '🏊', rest: '😴',
+}
+
+const BUTTON_COLOR: Record<string, string> = {
+  swim: '#3B82F6', ride: '#F97316', run: '#22C55E',
+  brick: '#F97316', rest: '#9CA3AF',
+}
+
 export default function TodaySession({ session, checkin, weekSessions = [] }: Props) {
   const queryClient = useQueryClient()
   const [showLog, setShowLog] = useState(false)
@@ -38,7 +47,19 @@ export default function TodaySession({ session, checkin, weekSessions = [] }: Pr
   const totalThisWeek     = weekSessions.filter(s => s.discipline !== 'rest').length
   const isWeekComplete    = completedThisWeek === totalThisWeek && totalThisWeek > 0
 
-  const ack = COMPLETION_ACKS[session.session_type] ?? COMPLETION_ACKS.rest
+  const ack        = COMPLETION_ACKS[session.session_type] ?? COMPLETION_ACKS.rest
+  const tagClass   = disciplineBg[session.discipline]
+  const accentColor = BUTTON_COLOR[session.discipline] ?? '#9CA3AF'
+  const emoji       = DISCIPLINE_EMOJI[session.discipline] ?? '🏃'
+
+  const detailParts = [
+    session.distance_km   ? `${session.distance_km}km`       : null,
+    session.target_pace   ? session.target_pace               : null,
+    session.effort_zone   ? session.effort_zone               : null,
+    session.duration_minutes ? `${session.duration_minutes}min` : null,
+  ].filter(Boolean)
+
+  const coachNote = checkin?.coach_response ?? session.coaching_rationale ?? null
 
   async function markComplete() {
     if (isRest) {
@@ -58,15 +79,7 @@ export default function TodaySession({ session, checkin, weekSessions = [] }: Pr
     setJustCompleted(true)
   }
 
-  const tagClass   = disciplineBg[session.discipline]
-
-  const leftBorderColor: Record<string, string> = {
-    swim: '#3B82F6', ride: '#F97316', run: '#22C55E',
-    rest: '#9CA3AF', brick: '#F97316',
-  }
-  const accentColor = leftBorderColor[session.discipline] ?? '#9CA3AF'
-
-  // Race day: special celebratory card
+  // ── Race day ──────────────────────────────────────────────────────────────
   if (isRaceDay) {
     return (
       <div className="mx-6 bg-gradient-to-br from-black to-gray-900 rounded-2xl overflow-hidden shadow-lg">
@@ -82,93 +95,86 @@ export default function TodaySession({ session, checkin, weekSessions = [] }: Pr
             Your training is done. Trust your preparation and race your race.
           </p>
         </div>
-        <div className="px-4 pb-4">
+        <div className="px-6 pb-6">
           <button
             onClick={markComplete}
             disabled={completing || isComplete}
-            className="w-full py-3.5 bg-white text-black font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
+            className="w-full py-4 bg-white text-black font-bold rounded-xl text-[16px] disabled:opacity-60 flex items-center justify-center"
           >
             {completing ? (
-              <span className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
-            ) : isComplete ? (
-              <span>Race completed 🎉</span>
-            ) : (
-              <span>Mark race complete</span>
-            )}
+              <span className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+            ) : isComplete ? 'Race completed 🎉' : 'Mark race complete'}
           </button>
         </div>
       </div>
     )
   }
 
+  // ── Normal session ────────────────────────────────────────────────────────
   return (
     <>
       <div
-        className="mx-6 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
-        style={{ borderLeft: `4px solid ${accentColor}` }}
+        className="mx-6 bg-white rounded-2xl shadow-sm overflow-hidden"
+        style={{ border: '1px solid #F3F4F6', borderLeft: `4px solid ${accentColor}` }}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 pt-4 pb-2">
-          <span className={`text-xs font-medium uppercase tracking-wider px-2.5 py-1 rounded-full ${tagClass}`}>
-            {disciplineLabel[session.discipline]}
-          </span>
-          <span className="text-[13px] text-gray-500">
-            {session.duration_minutes ? `${session.duration_minutes}min` : '—'}
-          </span>
-        </div>
+        {/* Main body */}
+        <div className="p-6">
+          <div className="flex items-start gap-4">
+            {/* Discipline emoji */}
+            <span
+              className="flex-shrink-0 leading-none mt-0.5"
+              style={{ fontSize: 32 }}
+              aria-hidden
+            >
+              {emoji}
+            </span>
 
-        {/* Title */}
-        <div className="px-4 pb-3">
-          <h2 className="text-[18px] font-semibold leading-snug">{session.title}</h2>
-          {session.description && (
-            <p className="text-[14px] text-gray-500 mt-1 leading-relaxed">{session.description}</p>
+            {/* Text block */}
+            <div className="flex-1 min-w-0">
+              <div className="mb-1">
+                <span className={`text-xs font-medium uppercase tracking-wider px-2 py-0.5 rounded-full ${tagClass}`}>
+                  {disciplineLabel[session.discipline]}
+                </span>
+              </div>
+              <h2 className="text-[20px] font-bold text-gray-900 leading-tight">
+                {session.title}
+              </h2>
+              {!isRest && detailParts.length > 0 && (
+                <p className="text-[14px] text-gray-400 mt-1">
+                  {detailParts.join(' · ')}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Coach rationale / check-in response */}
+          {coachNote && (
+            <div
+              className="mt-4 px-3.5 py-3 rounded-xl text-[13px] leading-relaxed"
+              style={{
+                backgroundColor: checkin?.plan_adjusted ? '#FFFBEB' : '#F9FAFB',
+                color: checkin?.plan_adjusted ? '#92400E' : '#6B7280',
+              }}
+            >
+              <span className="font-semibold not-italic" style={{ color: checkin?.plan_adjusted ? '#B45309' : '#374151' }}>
+                Coach:{' '}
+              </span>
+              <span className="italic">{coachNote}</span>
+            </div>
           )}
         </div>
 
-        {/* Checkin response or coaching rationale */}
-        {checkin?.coach_response ? (
-          <div className={`mx-4 mb-4 px-3 py-2.5 rounded-lg text-[14px] ${
-            checkin.plan_adjusted ? 'bg-amber-50 text-amber-800' : 'bg-gray-50 text-gray-600'
-          }`}>
-            <span className="font-medium">Coach: </span>{checkin.coach_response}
-          </div>
-        ) : session.coaching_rationale ? (
-          <div className="mx-4 mb-4 px-3 py-2.5 bg-gray-50 rounded-lg text-[14px] text-gray-500 italic">
-            <span className="font-medium not-italic">Coach: </span>{session.coaching_rationale}
-          </div>
-        ) : null}
-
-        {/* Targets row */}
-        {!isRest && (session.target_pace || session.effort_zone || session.distance_km) && (
-          <div className="flex gap-2 px-4 mb-4 flex-wrap">
-            {session.distance_km && (
-              <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">
-                {session.distance_km}km
-              </span>
-            )}
-            {session.target_pace && (
-              <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">
-                {session.target_pace}
-              </span>
-            )}
-            {session.effort_zone && (
-              <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">
-                {session.effort_zone}
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Actions */}
+        {/* CTA area */}
         {!isComplete && (
-          <div className="flex gap-2 px-4 pb-4">
+          <div className="px-6 pb-6 space-y-2">
             <button
               onClick={markComplete}
               disabled={completing}
-              className="flex-1 py-3.5 bg-black text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
+              className="w-full py-4 text-white font-bold rounded-xl text-[16px] disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
+              style={{ backgroundColor: accentColor }}
             >
               {completing ? (
-                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
                   <span>✓</span>
@@ -179,19 +185,19 @@ export default function TodaySession({ session, checkin, weekSessions = [] }: Pr
             {!isRest && (
               <button
                 onClick={() => setShowLog(true)}
-                className="px-4 py-3.5 border border-gray-200 font-semibold rounded-xl text-sm"
+                className="w-full py-2 text-[13px] font-medium text-gray-400 text-center"
               >
-                Log
+                Log details instead
               </button>
             )}
           </div>
         )}
 
-        {/* Completion moment (#6) */}
+        {/* Completion state */}
         {isComplete && (
-          <div className="px-4 pb-4">
+          <div className="px-6 pb-6">
             {isWeekComplete ? (
-              <div className="bg-green-50 rounded-xl p-4 text-center">
+              <div className="rounded-xl p-4 text-center" style={{ backgroundColor: '#F0FDF4' }}>
                 <p className="text-2xl mb-1">🎉</p>
                 <p className="font-bold text-green-800 text-sm">Week complete!</p>
                 <p className="text-xs text-green-700 mt-1">
@@ -200,7 +206,7 @@ export default function TodaySession({ session, checkin, weekSessions = [] }: Pr
                 <p className="text-xs text-green-600 mt-1.5 italic">{ack}</p>
               </div>
             ) : (
-              <div className="bg-gray-50 rounded-xl px-4 py-3">
+              <div className="rounded-xl px-4 py-3" style={{ backgroundColor: '#F9FAFB' }}>
                 <div className="flex items-center gap-2 mb-1">
                   <span className="w-5 h-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 text-xs">✓</span>
                   <span className="text-sm font-semibold text-gray-800">
@@ -223,10 +229,7 @@ export default function TodaySession({ session, checkin, weekSessions = [] }: Pr
       </div>
 
       {showLog && (
-        <WorkoutLogModal
-          session={session}
-          onClose={handleLogClose}
-        />
+        <WorkoutLogModal session={session} onClose={handleLogClose} />
       )}
     </>
   )

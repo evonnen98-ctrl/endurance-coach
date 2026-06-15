@@ -23,9 +23,23 @@ export default function WeekStrip({ sessions, today }: Props) {
     return { label, date, sessions: daySessions, isToday, isPast, allComplete }
   })
 
+  const trainingDays   = sessions.filter(s => s.discipline !== 'rest')
+  const completedCount = sessions.filter(s => s.status === 'complete' && s.discipline !== 'rest').length
+  const totalCount     = trainingDays.length
+  const progressPct    = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
+
+  const primaryDiscipline = trainingDays.length > 0
+    ? trainingDays.reduce((acc, s) => {
+        acc[s.discipline] = (acc[s.discipline] ?? 0) + 1
+        return acc
+      }, {} as Record<string, number>)
+    : {}
+  const topDiscipline = Object.entries(primaryDiscipline).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'run'
+  const progressColor = disciplineColor[topDiscipline as keyof typeof disciplineColor] ?? '#22C55E'
+
   return (
     <div className="px-6">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-1.5">
         <span className="text-sm font-semibold text-gray-800">This week</span>
         <button
           onClick={() => navigate('/plan')}
@@ -34,6 +48,21 @@ export default function WeekStrip({ sessions, today }: Props) {
           Full plan &rsaquo;
         </button>
       </div>
+
+      {/* Progress bar */}
+      {totalCount > 0 && (
+        <div className="mb-3">
+          <p className="text-xs text-gray-400 mb-1.5">
+            {completedCount} of {totalCount} sessions complete
+          </p>
+          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${progressPct}%`, backgroundColor: progressColor }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-1.5">
         {days.map(({ label, sessions: s, isToday, isPast, allComplete }, i) => {

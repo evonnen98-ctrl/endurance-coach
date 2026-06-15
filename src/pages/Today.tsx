@@ -148,10 +148,10 @@ export default function TodayPage() {
       {/* Page header */}
       <div className="bg-white px-6 pt-14 pb-5">
         <div className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">{dayLabel}</div>
-        <h1 className="text-[20px] font-semibold text-[#374151]">{getGreeting(user?.name)}</h1>
+        <h1 className="text-[20px] font-semibold text-[#374151] animate-fade-in">{getGreeting(user?.name)}</h1>
       </div>
 
-      <div className="space-y-4 pt-4 pb-6">
+      <div className="space-y-7 pt-4 pb-6">
 
         {/* Race countdown — bold visual card */}
         {goal?.event_type && daysUntilRace !== null && (
