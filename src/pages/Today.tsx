@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { format, differenceInDays, parseISO, subDays, addDays } from 'date-fns'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase, DEMO_USER_ID } from '../lib/supabase'
@@ -6,9 +6,9 @@ import type { User, Session, Goal } from '../types'
 import TodaySession from '../components/today/TodaySession'
 import WeekStrip from '../components/today/WeekStrip'
 
-const TODAY      = new Date()
-const TODAY_STR  = format(TODAY, 'yyyy-MM-dd')
-const YESTERDAY  = format(subDays(TODAY, 1), 'yyyy-MM-dd')
+const TODAY     = new Date()
+const TODAY_STR = format(TODAY, 'yyyy-MM-dd')
+const YESTERDAY = format(subDays(TODAY, 1), 'yyyy-MM-dd')
 
 function getGreeting(name?: string): string {
   const h = TODAY.getHours()
@@ -17,6 +17,21 @@ function getGreeting(name?: string): string {
   if (h < 12)           return `Good morning${n} 👋`
   if (h < 17)           return `Good afternoon${n} ☀️`
   return `Good evening${n} 🌙`
+}
+
+function calcStreak(dates: string[]): number {
+  if (!dates.length) return 0
+  const dateSet = new Set(dates)
+  let count = 0
+  let check = new Date(TODAY)
+  if (!dateSet.has(format(check, 'yyyy-MM-dd'))) {
+    check = subDays(check, 1)
+  }
+  while (dateSet.has(format(check, 'yyyy-MM-dd'))) {
+    count++
+    check = subDays(check, 1)
+  }
+  return count
 }
 
 export default function TodayPage() {
@@ -50,48 +65,45 @@ export default function TodayPage() {
     },
   })
 
-  const activePlanId      = activePlan?.id ?? null
-  const planStartDate     = activePlan?.start_date as string | undefined
-  const activePlanWeeks   = (activePlan?.total_weeks ?? null) as number | null
-  const prefs             = (user?.preferences ?? {}) as Record<string, unknown>
-  const prePlanMessage    = prefs.pre_plan_message as string | undefined
-  const planPhaseLabel    = prefs.plan_phase_label as string | undefined
-  const baseEndWeek       = Number(prefs.plan_base_end_week  ?? 0)
-  const buildEndWeek      = Number(prefs.plan_build_end_week ?? 0)
-  const peakEndWeek       = Number(prefs.plan_peak_end_week  ?? 0)
-  const planNotStarted    = planStartDate ? planStartDate > TODAY_STR : false
+  const { data: recentCompletedDates = [] } = useQuery({
+    queryKey: ['streak-dates'],
+    queryFn: async () => {
+      const cutoff = format(subDays(TODAY, 30), 'yyyy-MM-dd')
+      const { data } = await supabase
+        .from('sessions')
+        .select('scheduled_date')
+        .eq('user_id', DEMO_USER_ID)
+        .eq('status', 'complete')
+        .neq('discipline', 'rest')
+        .gte('scheduled_date', cutoff)
+        .lte('scheduled_date', TODAY_STR)
+      return (data ?? []).map(s => s.scheduled_date as string)
+    },
+  })
+
+  const activePlanId    = activePlan?.id ?? null
+  const planStartDate   = activePlan?.start_date as string | undefined
+  const activePlanWeeks = (activePlan?.total_weeks ?? null) as number | null
+  const prefs           = (user?.preferences ?? {}) as Record<string, unknown>
+  const prePlanMessage  = prefs.pre_plan_message as string | undefined
+  const planNotStarted  = planStartDate ? planStartDate > TODAY_STR : false
 
   const planCurrentWeek = planStartDate && !planNotStarted && activePlanWeeks
     ? Math.min(activePlanWeeks, Math.max(1, Math.ceil(differenceInDays(TODAY, parseISO(planStartDate)) / 7) + 1))
     : null
 
-  const weekOfDate = planStartDate && planCurrentWeek
-    ? format(addDays(parseISO(planStartDate), (planCurrentWeek - 1) * 7), 'd MMM')
+  const planProgressPct = planCurrentWeek && activePlanWeeks
+    ? Math.round((planCurrentWeek / activePlanWeeks) * 100)
     : null
 
-  const currentBlockLabel = planCurrentWeek && (baseEndWeek || buildEndWeek || peakEndWeek)
-    ? planCurrentWeek <= baseEndWeek  ? 'Base Block'
-      : planCurrentWeek <= buildEndWeek ? 'Build Block'
-      : planCurrentWeek <= peakEndWeek  ? 'Peak Block'
-      : 'Taper'
-    : planPhaseLabel ?? null
-
-  const planTimeline = planCurrentWeek && activePlanWeeks
-    ? [
-        `Week ${planCurrentWeek} of ${activePlanWeeks}`,
-        weekOfDate ? `w/c ${weekOfDate}` : null,
-        currentBlockLabel,
-      ].filter(Boolean).join(' · ')
-    : null
-
-  const { data: todaySession } = useQuery({
+  const { data: todaySessions = [] } = useQuery({
     queryKey: ['today-session', TODAY_STR, activePlanId],
     enabled: activePlanId != null,
     queryFn: async () => {
       const { data } = await supabase
         .from('sessions').select('*').eq('plan_id', activePlanId!)
-        .eq('scheduled_date', TODAY_STR).order('day_of_week').limit(1).maybeSingle()
-      return (data ?? null) as Session | null
+        .eq('scheduled_date', TODAY_STR).order('discipline')
+      return (data ?? []) as Session[]
     },
   })
 
@@ -112,7 +124,6 @@ export default function TodayPage() {
     },
   })
 
-  // Mark yesterday's planned sessions as missed
   useEffect(() => {
     if (!activePlanId) return
     async function markMissed() {
@@ -126,6 +137,8 @@ export default function TodayPage() {
     }
     markMissed()
   }, [activePlanId])
+
+  const streak = useMemo(() => calcStreak(recentCompletedDates), [recentCompletedDates])
 
   const daysUntilRace = goal?.target_date
     ? differenceInDays(parseISO(goal.target_date), TODAY)
@@ -141,91 +154,105 @@ export default function TodayPage() {
     : daysUntilRace > 30 ? 'rgba(245,158,11,0.07)'
     : 'rgba(239,68,68,0.07)'
 
-  const dayLabel = format(TODAY, 'EEEE d MMMM').toUpperCase()
+  const hasSessions = todaySessions.length > 0 && !todaySessions.every(s => s.discipline === 'rest')
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Page header */}
-      <div className="bg-white px-6 pt-14 pb-5">
-        <div className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">{dayLabel}</div>
-        <h1 className="text-[20px] font-semibold text-[#374151] animate-fade-in">{getGreeting(user?.name)}</h1>
+    <div className="min-h-screen" style={{ backgroundColor: '#F9FAFB' }}>
+      {/* Greeting */}
+      <div className="px-5 pt-14">
+        <h1
+          className="animate-fade-in"
+          style={{ fontSize: 22, fontWeight: 500, color: '#1a1a1a', lineHeight: 1.2 }}
+        >
+          {getGreeting(user?.name)}
+        </h1>
+        <div className="flex items-center gap-3 mt-1">
+          <p className="text-[13px] text-gray-400">{format(TODAY, 'EEEE, d MMMM')}</p>
+          {streak >= 2 && (
+            <span className="text-[13px] font-semibold" style={{ color: '#F97316' }}>
+              🔥 {streak} day streak
+            </span>
+          )}
+        </div>
       </div>
 
-      <div className="space-y-7 pt-4 pb-6">
+      <div className="px-5 pt-5 pb-24 space-y-5">
 
-        {/* Race countdown — bold visual card */}
+        {/* Race countdown */}
         {goal?.event_type && daysUntilRace !== null && (
           <div
-            className="mx-6 rounded-2xl overflow-hidden"
+            className="rounded-lg py-5 text-center"
             style={{ backgroundColor: countdownBg, border: `1px solid ${countdownColor}22` }}
           >
-            <div className="px-5 pt-5 pb-4 text-center">
-              <div className="text-xs font-medium uppercase tracking-wider mb-2" style={{ color: countdownColor }}>
-                {daysUntilRace < 0 ? 'Race passed' : 'Countdown'}
-              </div>
-              <p
-                className="tabular-nums font-bold leading-none"
-                style={{ fontSize: '76px', color: countdownColor, lineHeight: 1 }}
-              >
-                {Math.abs(daysUntilRace)}
-              </p>
-              <p className="text-[13px] text-gray-500 mt-2">
-                {daysUntilRace < 0 ? 'days since' : 'days until'}
-              </p>
-              <p className="text-[17px] font-bold mt-1" style={{ color: countdownColor }}>
-                {goal.event_type} 🏁
-              </p>
-              {goal.target_date && (
-                <p className="text-xs text-gray-400 mt-1">
-                  {new Date(goal.target_date + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-                </p>
-              )}
-            </div>
-          </div>
-        )}
+            <p
+              style={{
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: 80,
+                lineHeight: 1,
+                color: countdownColor,
+              }}
+            >
+              {Math.abs(daysUntilRace)}
+            </p>
+            <p className="text-[13px] text-gray-400 mt-1.5">
+              {daysUntilRace < 0 ? 'days since' : 'days until'}
+            </p>
+            <p className="text-[15px] font-semibold mt-1" style={{ color: countdownColor }}>
+              {goal.event_type} 🏁
+            </p>
 
-        {/* Plan timeline */}
-        {planTimeline && (
-          <div className="mx-6 bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3.5">
-            <div className="text-xs font-medium uppercase tracking-wider text-gray-400 mb-1.5">Training plan</div>
-            <p className="text-[16px] font-semibold text-gray-900">{planTimeline}</p>
-            {prePlanMessage && (
-              <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">{prePlanMessage}</p>
+            {/* Plan progress bar */}
+            {planProgressPct !== null && activePlanWeeks && planCurrentWeek && (
+              <div className="px-6 mt-4">
+                <div className="h-1 rounded-full overflow-hidden" style={{ backgroundColor: `${countdownColor}25` }}>
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${planProgressPct}%`, backgroundColor: countdownColor }}
+                  />
+                </div>
+                <p className="text-right text-[11px] mt-1" style={{ color: `${countdownColor}99` }}>
+                  Week {planCurrentWeek} of {activePlanWeeks}
+                </p>
+              </div>
             )}
           </div>
         )}
 
-        {/* Pre-plan banner — plan exists but hasn't started yet */}
+        {/* Pre-plan banner */}
         {planNotStarted && (
-          <div className="mx-6 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3.5">
-            <div className="text-xs font-medium uppercase tracking-wider text-amber-600 mb-1.5">Coming up</div>
-            {prePlanMessage && <p className="text-[16px] text-amber-900 mb-1">{prePlanMessage}</p>}
-            <p className="text-[16px] text-amber-800 font-medium">
-              Your plan starts on {planStartDate ? new Date(planStartDate + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' }) : 'soon'}.
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <p className="text-[13px] text-amber-700 leading-relaxed">
+              {prePlanMessage
+                ? prePlanMessage
+                : `Your plan starts on ${planStartDate
+                    ? new Date(planStartDate + 'T12:00:00').toLocaleDateString('en-AU', {
+                        weekday: 'long', day: 'numeric', month: 'long',
+                      })
+                    : 'soon'}.`}
             </p>
           </div>
         )}
 
-        {/* Today's workout */}
-        {todaySession ? (
-          <TodaySession
-            session={todaySession}
-            weekSessions={weekSessions}
-          />
-        ) : planNotStarted ? (
-          <div className="mx-6 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center">
-            <p className="text-xs text-gray-400 uppercase tracking-wider">Today</p>
-            <p className="text-[16px] text-gray-500 mt-1">Rest up — training starts soon.</p>
-          </div>
-        ) : (
-          <div className="mx-6 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center">
-            <p className="text-xs text-gray-400 uppercase tracking-wider">Today</p>
-            <p className="text-[16px] text-gray-500 mt-1">Rest day — no session scheduled.</p>
-          </div>
-        )}
+        {/* Today's sessions */}
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400 mb-2">Today</p>
+          {hasSessions ? (
+            <div className="space-y-2">
+              {todaySessions.map(session => (
+                <TodaySession key={session.id} session={session} weekSessions={weekSessions} />
+              ))}
+            </div>
+          ) : !planNotStarted ? (
+            <p className="text-[14px] text-gray-400">Rest day — nothing scheduled.</p>
+          ) : null}
+        </div>
 
         {/* This week */}
-        <WeekStrip sessions={weekSessions} today={TODAY} />
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400 mb-2">This week</p>
+          <WeekStrip sessions={weekSessions} today={TODAY} />
+        </div>
+
       </div>
     </div>
   )

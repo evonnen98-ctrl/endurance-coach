@@ -127,10 +127,9 @@ export default function ProgressPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white px-6 pt-14 pb-5">
-        <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Volume & Consistency</div>
+      <div className="bg-white px-5 pt-14 pb-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Progress</h1>
+          <h1 className="text-[22px] font-semibold" style={{ color: '#1C1917' }}>Progress</h1>
           <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
             <button
               onClick={() => setMode('distance')}
@@ -150,7 +149,7 @@ export default function ProgressPage() {
 
       <div className="px-6 pt-6 space-y-6 pb-6">
         {trend && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex items-center gap-3">
+          <div className="bg-white rounded-lg border border-gray-100 shadow-sm px-4 py-3 flex items-center gap-3">
             <span className="text-xl">{trend.direction === 'up' ? '📈' : '📉'}</span>
             <p className="text-sm text-gray-700">
               Run volume{' '}
@@ -162,7 +161,7 @@ export default function ProgressPage() {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+        <div className="bg-white rounded-lg border border-gray-100 shadow-sm p-4">
           <div className="flex items-center justify-between mb-4">
             <span className="text-[15px] font-semibold">Weekly volume</span>
             <div className="flex gap-3 text-xs">
@@ -183,78 +182,78 @@ export default function ProgressPage() {
         <div>
           <h2 className="font-semibold text-base mb-3">Personal bests</h2>
           {!hasPBs ? (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 text-center">
+            <div className="bg-white rounded-lg border border-gray-100 shadow-sm p-5 text-center">
               <p className="text-gray-400 text-sm">Complete sessions to start tracking your personal bests.</p>
             </div>
           ) : (
             <div className="space-y-2">
               {pbs.run && (
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
+                <div className="bg-white rounded-lg border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-sm">🏃</span>
                     <div>
                       <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Fastest run pace</p>
-                      <p className="text-[18px] font-semibold">{pbs.run.pace}</p>
+                      <p className="font-bebas" style={{ fontSize: 26, lineHeight: 1.1 }}>{pbs.run.pace}</p>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400">{pbs.run.date}</p>
                 </div>
               )}
               {pbs.longestRun && (
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
+                <div className="bg-white rounded-lg border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-sm">📏</span>
                     <div>
                       <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Longest run</p>
-                      <p className="text-[18px] font-semibold">{pbs.longestRun.distance_km.toFixed(1)}km</p>
+                      <p className="font-bebas" style={{ fontSize: 26, lineHeight: 1.1 }}>{pbs.longestRun.distance_km.toFixed(1)}km</p>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400">{pbs.longestRun.date}</p>
                 </div>
               )}
               {pbs.ride && (
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
+                <div className="bg-white rounded-lg border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-sm">🚴</span>
                     <div>
                       <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Fastest ride pace</p>
-                      <p className="text-[18px] font-semibold">{pbs.ride.pace}</p>
+                      <p className="font-bebas" style={{ fontSize: 26, lineHeight: 1.1 }}>{pbs.ride.pace}</p>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400">{pbs.ride.date}</p>
                 </div>
               )}
               {pbs.longestRide && (
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
+                <div className="bg-white rounded-lg border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-sm">📏</span>
                     <div>
                       <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Longest ride</p>
-                      <p className="text-[18px] font-semibold">{pbs.longestRide.distance_km.toFixed(1)}km</p>
+                      <p className="font-bebas" style={{ fontSize: 26, lineHeight: 1.1 }}>{pbs.longestRide.distance_km.toFixed(1)}km</p>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400">{pbs.longestRide.date}</p>
                 </div>
               )}
               {pbs.swim && (
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
+                <div className="bg-white rounded-lg border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm">🏊</span>
                     <div>
                       <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Fastest swim pace</p>
-                      <p className="text-[18px] font-semibold">{pbs.swim.pace}</p>
+                      <p className="font-bebas" style={{ fontSize: 26, lineHeight: 1.1 }}>{pbs.swim.pace}</p>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400">{pbs.swim.date}</p>
                 </div>
               )}
               {pbs.longestSwim && (
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
+                <div className="bg-white rounded-lg border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm">📏</span>
                     <div>
                       <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Longest swim</p>
-                      <p className="text-[18px] font-semibold">{(pbs.longestSwim.distance_km * 1000).toFixed(0)}m</p>
+                      <p className="font-bebas" style={{ fontSize: 26, lineHeight: 1.1 }}>{(pbs.longestSwim.distance_km * 1000).toFixed(0)}m</p>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400">{pbs.longestSwim.date}</p>

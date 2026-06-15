@@ -75,7 +75,7 @@ export default function PlanPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white px-6 pt-14 pb-4">
-        <h1 className="text-2xl font-semibold">Training plan</h1>
+        <h1 className="text-[22px] font-semibold" style={{ color: '#1C1917' }}>Training plan</h1>
         {hasModified && (
           <div className="flex mt-3 bg-gray-100 rounded-xl p-1 w-fit">
             <button

@@ -28,6 +28,101 @@ const EFFORT_ZONES: Record<string, string> = {
   brick: 'Zone 2-3',
 }
 
+// ── Race distance constants ───────────────────────────────────────────────────
+
+interface RaceDistances {
+  swim?: number
+  ride?: number
+  run?:  number
+}
+
+const RACE_DISTANCES: Record<string, RaceDistances> = {
+  ironman:       { swim: 3.8, ride: 180, run: 42 },
+  '70.3':        { swim: 1.9, ride: 90,  run: 21 },
+  olympic_tri:   { swim: 1.5, ride: 40,  run: 10 },
+  sprint_tri:    { swim: 0.75, ride: 20, run: 5  },
+  marathon:      { run: 42 },
+  half_marathon: { run: 21 },
+  '10km':        { run: 10 },
+  '5km':         { run: 5  },
+  century_ride:  { ride: 160 },
+}
+
+function getRaceDistances(goalRaw: string): RaceDistances | null {
+  const goalType = detectGoalType(goalRaw)
+  return RACE_DISTANCES[goalType] ?? null
+}
+
+// Fraction of the long session distance for each session type
+const SESSION_TYPE_RATIO: Record<string, number> = {
+  long:     1.00,
+  easy:     0.65,
+  base:     0.65,
+  tempo:    0.55,
+  interval: 0.45,
+  speed:    0.45,
+  recovery: 0.50,
+  drill:    0.60,
+  brick:    0.80,
+}
+
+function kmToMin(disc: string, type: string, km: number): number {
+  const perKm = disc === 'run'
+    ? (type === 'interval' ? 5.0 : type === 'tempo' ? 5.5 : 6.5)
+    : disc === 'ride' ? 2.2 : 30
+  const base = Math.round(km * perKm)
+  return Math.max(10, type === 'interval' ? base + 20 : base)
+}
+
+// Phase for a given week (mirrors the WeekSection UI formula)
+function getWeekPhase(weekNumber: number, totalWeeks: number): 'base' | 'build' | 'peak' | 'taper' | 'race_week' {
+  const weeksFromEnd = totalWeeks - weekNumber
+  if (weeksFromEnd === 0) return 'race_week'
+  if (weeksFromEnd <= 2) return 'taper'
+  if (weeksFromEnd <= 4) return 'peak'
+  if (weekNumber <= Math.floor(totalWeeks * 0.40)) return 'base'
+  return 'build'
+}
+
+// Long session km for a given week, working from race distance
+// Returns value with 1 decimal precision (important for swim)
+function calcWeekLongKm(
+  weekNumber: number,
+  totalWeeks: number,
+  peakLong:   number,
+  week1Long:  number,
+  raceDistKm?: number,
+): number {
+  const round1     = (x: number) => Math.round(x * 10) / 10
+  const weeksFromEnd = totalWeeks - weekNumber
+  const taperStart = Math.max(totalWeeks - 2, 2)
+
+  // Race week: 30% of race distance (short shakeout)
+  if (weeksFromEnd === 0) {
+    return round1((raceDistKm ?? peakLong) * 0.30)
+  }
+
+  // Taper: wk before race = 55% peak, week before that = 70%
+  if (weeksFromEnd <= 2) {
+    return round1(peakLong * (weeksFromEnd === 1 ? 0.55 : 0.70))
+  }
+
+  // Peak weeks (4 and 3 weeks from end): 95% and 100%
+  if (weeksFromEnd <= 4) {
+    return round1(peakLong * (weeksFromEnd === 3 ? 0.95 : 1.00))
+  }
+
+  // Recovery every 4th week: 80% of where progression would be
+  if (weekNumber % 4 === 0) {
+    const prog = week1Long + ((peakLong - week1Long) / (taperStart - 1)) * (weekNumber - 1)
+    return round1(prog * 0.80)
+  }
+
+  // Normal build: linear progression week1Long → peakLong
+  const progress = taperStart > 1 ? (weekNumber - 1) / (taperStart - 1) : 0
+  return round1(week1Long + (peakLong - week1Long) * progress)
+}
+
 // ── Target pace computation ───────────────────────────────────────────────────
 
 function parsePaceSec(pace: string): number {
@@ -1023,17 +1118,84 @@ function buildBaseWeek(ctx: UserContext, peakMultiplier: number, planType: PlanT
 // ── Week expansion ────────────────────────────────────────────────────────────
 
 function expandPlan(
-  baseSessions: AiSession[],
-  multipliers: readonly number[],
+  baseSessions:    AiSession[],
+  multipliers:     readonly number[],
+  raceDistances:   RaceDistances | null,
+  currentWeeklyKm: Record<string, number>,
+  totalWeeks:      number,
 ): Array<{ week: number; sessions: AiSession[] }> {
-  return multipliers.map((mult, i) => ({
-    week: i + 1,
-    sessions: baseSessions.map(s => ({
-      ...s,
-      km:  Math.max(1, Math.round(s.km  * mult)),
-      min: Math.max(10, Math.round(s.min * mult)),
-    })),
-  }))
+
+  // Compute peak long and week-1 long per discipline from race distance
+  const peakLong:  Record<string, number> = {}
+  const week1Long: Record<string, number> = {}
+
+  const round1 = (x: number) => Math.round(x * 10) / 10
+  if (raceDistances) {
+    for (const disc of ['run', 'ride', 'swim'] as const) {
+      const raceDist = raceDistances[disc]
+      if (!raceDist) continue
+      const currentLong = round1((currentWeeklyKm[disc] ?? 0) * 0.40)
+      const targetPeak  = round1(raceDist * 0.90)
+      peakLong[disc]  = Math.max(currentLong, targetPeak)
+      week1Long[disc] = round1(Math.max(currentLong, peakLong[disc] * 0.45))
+    }
+  }
+
+  console.log('[PLAN] LONG-SESSION PEAKS (race-dist formula):', peakLong)
+  console.log('[PLAN] LONG-SESSION WEEK-1:                  ', week1Long)
+
+  const discsWithFormula = new Set(Object.keys(peakLong))
+
+  return multipliers.map((mult, i) => {
+    const weekNumber = i + 1
+
+    const sessions = baseSessions.map(s => {
+      const disc = s.disc
+
+      // No race distance for this discipline → fall back to multiplier
+      if (!discsWithFormula.has(disc)) {
+        return {
+          ...s,
+          km:  Math.max(1,  Math.round(s.km  * mult)),
+          min: Math.max(10, Math.round(s.min * mult)),
+        }
+      }
+
+      // This week's long session km from race-distance formula
+      const weekLong = calcWeekLongKm(weekNumber, totalWeeks, peakLong[disc], week1Long[disc], raceDistances?.[disc as 'swim'|'ride'|'run'])
+
+      // Apply phase-appropriate session type override
+      const phase = getWeekPhase(weekNumber, totalWeeks)
+      const buildStart = Math.floor(totalWeeks * 0.40)
+      const weeksIntoBuild = weekNumber - buildStart
+
+      let sessionType = s.type
+      if (phase === 'base') {
+        // Base: easy aerobic only — no tempo or intervals
+        if (sessionType === 'interval' || sessionType === 'tempo' || sessionType === 'speed') {
+          sessionType = 'easy'
+        }
+      } else if (phase === 'build' && weeksIntoBuild < 3) {
+        // Early build: allow tempo but not intervals yet
+        if (sessionType === 'interval' || sessionType === 'speed') {
+          sessionType = 'tempo'
+        }
+      }
+
+      // Scale this session relative to long
+      const ratio = SESSION_TYPE_RATIO[sessionType] ?? 0.65
+      const rawKm = sessionType === 'long' ? weekLong : weekLong * ratio
+      const km    = disc === 'swim'
+        ? Math.max(0.5, Math.round(rawKm * 10) / 10)
+        : Math.max(1,   Math.round(rawKm))
+
+      const min = kmToMin(disc, sessionType, km)
+
+      return { ...s, type: sessionType, km, min }
+    })
+
+    return { week: weekNumber, sessions }
+  })
 }
 
 // ── DB row construction ───────────────────────────────────────────────────────
@@ -1056,7 +1218,9 @@ function sessionsToRows(
         const discCap = disc.charAt(0).toUpperCase() + disc.slice(1)
         const targetPace = computeTargetPace(disc, typeKey, prefs)
         const effortZone = EFFORT_ZONES[typeKey] ?? 'Zone 2'
-        const kmRounded  = Math.round(Number(s.km) || 1)
+        const kmRounded  = disc === 'swim'
+          ? Math.max(0.5, Math.round((Number(s.km) || 0.5) * 10) / 10)
+          : Math.max(1, Math.round(Number(s.km) || 1))
         const minRounded = Math.round(Number(s.min) || 30)
         const description = buildDescription(disc, typeKey, kmRounded, targetPace)
         const structure   = buildStructure(disc, typeKey, kmRounded, targetPace)
@@ -1181,11 +1345,20 @@ export async function generatePlanSkeleton(
   const timing = calculatePlanTiming(targetDate, preferredStart, context.user.training_phase as string)
   const { multipliers, peakMultiplier } = buildPlanMultipliers(timing.planWeeks, timing.planType, goalType, timing.phases)
 
+  const currentWeeklyKm = {
+    run:  Number(context.user.preferences.run_weekly_km)  || 0,
+    ride: Number(context.user.preferences.ride_weekly_km) || 0,
+    swim: Number(context.user.preferences.swim_weekly_km) || 0,
+  }
+  const raceDistances = timing.planType !== 'base_building' ? getRaceDistances(goalType) : null
+
   console.log('[PLAN] TIMING:', { planWeeks: timing.planWeeks, planType: timing.planType, startDate: format(timing.startDate, 'yyyy-MM-dd'), phases: timing.phases, weeksUntilRace: timing.weeksUntilRace })
   console.log('[PLAN] MULTIPLIERS:', multipliers)
+  console.log('[PLAN] RACE DISTANCES:', raceDistances)
+  console.log('[PLAN] CURRENT WEEKLY KM:', currentWeeklyKm)
 
   const baseSessions = buildBaseWeek(context, peakMultiplier, timing.planType)
-  const allWeeks     = expandPlan(baseSessions, multipliers)
+  const allWeeks     = expandPlan(baseSessions, multipliers, raceDistances, currentWeeklyKm, timing.planWeeks)
   const startDate    = timing.startDate
 
   console.log('[PLAN] DB insert:', Date.now())

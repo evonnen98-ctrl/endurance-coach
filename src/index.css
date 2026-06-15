@@ -3,17 +3,25 @@
 @tailwind utilities;
 
 * {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'DM Sans', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 body {
   background-color: #f9fafb;
+  color: #374151;
+}
+
+h1 {
+  color: #1C1917;
 }
 
 @layer utilities {
   .safe-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .font-bebas {
+    font-family: 'Bebas Neue', sans-serif;
   }
 }
 

@@ -27,8 +27,8 @@ function ReadOnlyField({ label, value }: { label: string; value?: string | null 
   if (!value) return null
   return (
     <div>
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-0.5">{label}</p>
-      <p className="text-[15px] text-gray-800">{value}</p>
+      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>
+      <p className="text-[14px] text-gray-800">{value}</p>
     </div>
   )
 }
@@ -104,7 +104,7 @@ export default function ProfileDrawer({ user, onClose }: Props) {
   if (confirmRebuild) {
     return (
       <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-6">
-        <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+        <div className="bg-white rounded-lg p-6 w-full max-w-sm shadow-2xl">
           <h3 className="font-semibold text-lg mb-3">Update your plan?</h3>
           <p className="text-[15px] text-gray-600 mb-6 leading-relaxed">
             This takes you back through setup so you can update your goal, fitness level, and training preferences.
@@ -153,7 +153,7 @@ export default function ProfileDrawer({ user, onClose }: Props) {
           </div>
 
           {/* ── What your coach knows ── */}
-          <div className="border border-gray-200 rounded-2xl overflow-hidden">
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
             <div className="px-4 pt-4 pb-3 bg-gray-50 border-b border-gray-100">
               <h3 className="text-base font-semibold">What your coach knows about you</h3>
               <p className="text-[13px] text-gray-500 mt-1 leading-relaxed">
@@ -163,29 +163,32 @@ export default function ProfileDrawer({ user, onClose }: Props) {
             </div>
 
             <div className="px-4 py-4 space-y-4">
-              <ReadOnlyField label="Goal" value={goalLine} />
-              <ReadOnlyField
-                label="Training approach"
-                value={[
-                  PHASE_LABEL[user.training_phase],
-                  user.training_style ? STYLE_LABEL[user.training_style] : null,
-                ].filter(Boolean).join(' · ')}
-              />
-              {user.disciplines && user.disciplines.length > 0 && (
+              {/* Two-column grid for read-only info */}
+              <div className="grid grid-cols-2 gap-3">
+                {goalLine && <ReadOnlyField label="Goal" value={goalLine} />}
                 <ReadOnlyField
-                  label="Disciplines"
-                  value={user.disciplines.map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(', ')}
-                />
-              )}
-              {(daysPerWeek || selectedDays?.length) && (
-                <ReadOnlyField
-                  label="Training days"
+                  label="Approach"
                   value={[
-                    daysPerWeek ? `${daysPerWeek} days/week` : null,
-                    selectedDays?.length ? selectedDays.join(', ') : null,
-                  ].filter(Boolean).join(' — ')}
+                    PHASE_LABEL[user.training_phase],
+                    user.training_style ? STYLE_LABEL[user.training_style] : null,
+                  ].filter(Boolean).join(' · ')}
                 />
-              )}
+                {user.disciplines && user.disciplines.length > 0 && (
+                  <ReadOnlyField
+                    label="Disciplines"
+                    value={user.disciplines.map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(', ')}
+                  />
+                )}
+                {(daysPerWeek || selectedDays?.length) && (
+                  <ReadOnlyField
+                    label="Training days"
+                    value={[
+                      daysPerWeek ? `${daysPerWeek}×/week` : null,
+                      selectedDays?.length ? selectedDays.join(', ') : null,
+                    ].filter(Boolean).join(' — ')}
+                  />
+                )}
+              </div>
               {volumeLines && (
                 <ReadOnlyField label="Current weekly volumes" value={volumeLines} />
               )}

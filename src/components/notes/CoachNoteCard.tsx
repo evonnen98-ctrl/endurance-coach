@@ -42,7 +42,7 @@ export default function CoachNoteCard({ note, defaultExpanded = false }: Props) 
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div className="bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden">
 
       {/* ── Collapsed header (always visible) ── */}
       <button
@@ -123,7 +123,7 @@ export default function CoachNoteCard({ note, defaultExpanded = false }: Props) 
 
           {/* Looking ahead */}
           {note.looking_ahead && (
-            <div className="bg-gray-50 rounded-xl px-4 py-3">
+            <div className="bg-gray-50 rounded-lg px-4 py-3">
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1.5">Looking ahead</p>
               <p className="text-sm text-gray-700 leading-relaxed">{note.looking_ahead}</p>
             </div>
@@ -136,7 +136,7 @@ export default function CoachNoteCard({ note, defaultExpanded = false }: Props) 
                 <span className="font-semibold">Coach: </span>{note.closing_prompt}
               </p>
               {note.user_reply ? (
-                <div className="bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-700">
+                <div className="bg-gray-50 rounded-lg px-4 py-3 text-sm text-gray-700">
                   {note.user_reply}
                 </div>
               ) : (
@@ -147,12 +147,12 @@ export default function CoachNoteCard({ note, defaultExpanded = false }: Props) 
                     value={reply}
                     onChange={e => setReply(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && sendReply()}
-                    className="flex-1 px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400"
+                    className="flex-1 px-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-gray-400"
                   />
                   <button
                     onClick={sendReply}
                     disabled={sending || !reply.trim()}
-                    className="px-3 py-2.5 bg-black text-white rounded-xl disabled:opacity-40 flex items-center"
+                    className="px-3 py-2.5 bg-black text-white rounded-lg disabled:opacity-40 flex items-center"
                   >
                     {sending
                       ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />

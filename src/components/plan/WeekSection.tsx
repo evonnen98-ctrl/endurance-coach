@@ -55,27 +55,33 @@ export default function WeekSection({ weekNumber, totalWeeks, sessions, today, p
         className="w-full flex items-center justify-between mb-2 text-left group"
         onClick={() => setIsExpanded(e => !e)}
       >
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-semibold text-gray-700">
-            Week {weekNumber}{wcLabel ? ` · ${wcLabel}` : ''}
+        {/* Left: week label + phase + date — all inline, one line */}
+        <div className="flex items-center gap-1.5 min-w-0 mr-2">
+          <span className={`text-[13px] font-semibold ${isCurrentWeek ? 'text-gray-900' : 'text-gray-600'}`}>
+            Week {weekNumber}
           </span>
-          {isCurrentWeek && (
-            <span className="text-xs font-medium bg-black text-white px-2 py-0.5 rounded-full">
-              This week
-            </span>
+          <span className="text-[11px] text-gray-300">·</span>
+          <span className={`text-[11px] font-semibold ${badge.color}`}>{badge.label}</span>
+          {wcLabel && (
+            <>
+              <span className="text-[11px] text-gray-300">·</span>
+              <span className="text-[11px] text-gray-400">{wcLabel}</span>
+            </>
           )}
-          <span className={`text-xs font-medium ${badge.color}`}>{badge.label}</span>
+          {isCurrentWeek && (
+            <span className="text-[10px] font-semibold bg-black text-white px-1.5 py-0.5 rounded-full ml-1">now</span>
+          )}
         </div>
 
+        {/* Right: volume + chevron */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Volume summary — always visible */}
-          <div className="flex gap-2 text-xs">
-            {vol.swim > 0 && <span className="text-blue-500 font-medium">🏊 {vol.swim.toFixed(1)}km</span>}
-            {vol.ride > 0 && <span className="text-orange-500 font-medium">🚴 {vol.ride}km</span>}
-            {vol.run  > 0 && <span className="text-green-500 font-medium">🏃 {vol.run}km</span>}
+          <div className="flex gap-1.5 text-[11px]">
+            {vol.swim > 0 && <span className="text-blue-500 font-medium">🏊 {vol.swim.toFixed(1)}</span>}
+            {vol.ride > 0 && <span className="text-orange-500 font-medium">🚴 {vol.ride}</span>}
+            {vol.run  > 0 && <span className="text-green-500 font-medium">🏃 {vol.run}</span>}
           </div>
           <ChevronRight
-            size={16}
+            size={14}
             className={`text-gray-400 transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`}
           />
         </div>
