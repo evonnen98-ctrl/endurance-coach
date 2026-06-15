@@ -256,16 +256,23 @@ function peakMultiplierForGoal(goalRaw: string): number {
 
 // ── Race-adaptive plan timing ─────────────────────────────────────────────────
 
-type PlanPhase = 'base_block' | 'full' | 'compressed' | 'race_prep' | 'race_week'
+type PlanType = 'base_building' | 'race_prep' | 'compressed' | 'standard' | 'extended' | 'long_term'
+
+interface PhaseWeeks {
+  baseWeeks:  number
+  buildWeeks: number
+  peakWeeks:  number
+  taperWeeks: number
+}
 
 interface PlanTiming {
   planWeeks:      number
   startDate:      Date
-  phase:          PlanPhase
+  planType:       PlanType
   phaseLabel:     string
   userMessage:    string | null
   weeksUntilRace: number | null
-  nextBlockDate?: string  // ISO date — when Block 2 starts (two-block plans)
+  phases:         PhaseWeeks
 }
 
 function nextMonday(d: Date): Date {
@@ -277,87 +284,102 @@ function nextMonday(d: Date): Date {
   return m
 }
 
+function computePhaseWeeks(planWeeks: number, planType: PlanType): PhaseWeeks {
+  if (planType === 'base_building') {
+    return { baseWeeks: planWeeks, buildWeeks: 0, peakWeeks: 0, taperWeeks: 0 }
+  }
+  if (planType === 'race_prep' || planType === 'compressed') {
+    const taperWeeks = Math.min(1, planWeeks)
+    return { baseWeeks: 0, buildWeeks: 0, peakWeeks: planWeeks - taperWeeks, taperWeeks }
+  }
+
+  const pcts = planType === 'long_term'
+    ? { base: 0.60, build: 0.25, peak: 0.10, taper: 0.05, minTaper: 2 }
+    : planType === 'extended'
+    ? { base: 0.50, build: 0.30, peak: 0.15, taper: 0.05, minTaper: 2 }
+    : { base: 0.40, build: 0.40, peak: 0.15, taper: 0.05, minTaper: 2 }  // standard — min 2 taper weeks
+
+  const taperWeeks = Math.max(pcts.minTaper, Math.round(planWeeks * pcts.taper))
+  const afterTaper = planWeeks - taperWeeks
+  const peakWeeks  = Math.max(1, Math.round(afterTaper * (pcts.peak / (1 - pcts.taper))))
+  const afterPeak  = afterTaper - peakWeeks
+  const buildWeeks = Math.round(afterPeak * (pcts.build / (pcts.base + pcts.build)))
+  const baseWeeks  = afterPeak - buildWeeks
+
+  return { baseWeeks, buildWeeks, peakWeeks, taperWeeks }
+}
+
 function calculatePlanTiming(
   targetDate:         string | undefined | null,
   preferredStartDate: string | undefined | null,
+  trainingPhase?:     string | null,
 ): PlanTiming {
   const today     = new Date()
   const msPerWeek = 7 * 24 * 60 * 60 * 1000
 
-  // Start date: what the user chose (or next Monday by default)
   const startDate = preferredStartDate
     ? nextMonday(new Date(preferredStartDate + 'T12:00:00'))
     : nextMonday(today)
 
-  // No race → 12-week base block
-  if (!targetDate) {
+  // No race date, or phase isn't race-focused → 12-week base building plan
+  const isRacePhase = trainingPhase === 'race'
+  if (!targetDate || !isRacePhase) {
+    const phases = computePhaseWeeks(12, 'base_building')
     return {
-      planWeeks: 12, startDate, phase: 'base_block', phaseLabel: 'Base Block',
-      userMessage: null, weeksUntilRace: null,
+      planWeeks: 12, startDate, planType: 'base_building', phaseLabel: 'Base Building Plan',
+      userMessage: null, weeksUntilRace: null, phases,
     }
   }
 
   const raceDate       = new Date(targetDate + 'T12:00:00')
-  const totalWeeks     = Math.floor((raceDate.getTime() - startDate.getTime()) / msPerWeek)
+  const totalWeeks     = Math.ceil((raceDate.getTime() - startDate.getTime()) / msPerWeek)
   const weeksFromToday = Math.floor((raceDate.getTime() - today.getTime()) / msPerWeek)
+  const raceDateStr    = format(raceDate, 'd MMMM yyyy')
+  const startDateStr   = format(startDate, 'd MMMM')
 
-  // Race passed or same week
+  // Race already passed
   if (totalWeeks <= 0) {
+    const phases = computePhaseWeeks(1, 'race_prep')
     return {
-      planWeeks: 1, startDate, phase: 'race_week', phaseLabel: 'Race Week',
+      planWeeks: 1, startDate, planType: 'race_prep', phaseLabel: 'Race Week',
       userMessage: 'Race day is here — rest, stay sharp, and focus on race-day logistics.',
-      weeksUntilRace: weeksFromToday,
+      weeksUntilRace: weeksFromToday, phases,
     }
   }
 
-  // ≤4 weeks: Race Prep Block — easy sessions + sharpening, no building
-  if (totalWeeks <= 4) {
-    return {
-      planWeeks: totalWeeks, startDate, phase: 'race_prep', phaseLabel: 'Race Prep Block',
-      userMessage: `${totalWeeks} week${totalWeeks !== 1 ? 's' : ''} to race day — focusing on sharpening your fitness and arriving fresh.`,
-      weeksUntilRace: weeksFromToday,
+  // Classify plan type by total duration
+  const planType: PlanType =
+    totalWeeks <= 7  ? 'race_prep'
+    : totalWeeks <= 11 ? 'compressed'
+    : totalWeeks <= 16 ? 'standard'
+    : totalWeeks <= 24 ? 'extended'
+    : 'long_term'
+
+  const phases = computePhaseWeeks(totalWeeks, planType)
+
+  let phaseLabel: string
+  let userMessage: string
+
+  if (planType === 'race_prep') {
+    phaseLabel   = 'Race Prep Plan'
+    userMessage  = `${totalWeeks} week${totalWeeks !== 1 ? 's' : ''} to race day on ${raceDateStr} — ${totalWeeks <= 3 ? 'keeping you sharp and arriving fresh' : 'race-specific work with a taper in the final week'}.`
+  } else if (planType === 'compressed') {
+    phaseLabel   = 'Race Ready Plan'
+    userMessage  = `${totalWeeks} weeks to race day on ${raceDateStr}. Starting ${startDateStr}, building intensity week by week through to your race.`
+  } else {
+    phaseLabel = `${totalWeeks}-Week Race Plan`
+    if (phases.baseWeeks > 0) {
+      const baseEndDate  = format(addDays(startDate, phases.baseWeeks * 7 - 1), 'd MMM')
+      const buildStart   = format(addDays(startDate, phases.baseWeeks * 7), 'd MMMM')
+      userMessage = `Your race is ${totalWeeks} weeks away on ${raceDateStr}. Starting ${startDateStr}, we build your aerobic base through ${baseEndDate}, then shift to race-specific work from ${buildStart}.`
+    } else {
+      userMessage = `Your race is ${totalWeeks} weeks away on ${raceDateStr}. ${totalWeeks}-week plan starting ${startDateStr}.`
     }
   }
 
-  // 5-8 weeks: Race Ready Block — compressed, skip base, taper last week
-  if (totalWeeks <= 8) {
-    return {
-      planWeeks: totalWeeks, startDate, phase: 'compressed', phaseLabel: 'Race Ready Block',
-      userMessage: `${totalWeeks} weeks to go — skipping base phase and going straight into race-specific work. Taper in the final week.`,
-      weeksUntilRace: weeksFromToday,
-    }
-  }
-
-  // 9-14 weeks: Standard plan (Base 40% + Build 40% + Peak 15% + Taper)
-  if (totalWeeks <= 14) {
-    return {
-      planWeeks: totalWeeks, startDate, phase: 'full', phaseLabel: 'Race Plan',
-      userMessage: null, weeksUntilRace: weeksFromToday,
-    }
-  }
-
-  // 15-24 weeks: Two blocks — base building now, race-specific block later
-  if (totalWeeks <= 24) {
-    const baseWeeks     = totalWeeks - 10
-    const block2Start   = addDays(startDate, baseWeeks * 7)
-    const nextBlockDate = format(block2Start, 'yyyy-MM-dd')
-    return {
-      planWeeks: baseWeeks, startDate, phase: 'base_block', phaseLabel: 'Base Block',
-      nextBlockDate,
-      userMessage: `${totalWeeks} weeks to race day. Building your aerobic base for ${baseWeeks} weeks first — race-specific training begins ${format(block2Start, 'd MMM yyyy')}.`,
-      weeksUntilRace: weeksFromToday,
-    }
-  }
-
-  // >24 weeks: 12-week base block, reassess after
-  const months    = Math.round(totalWeeks / 4.33)
-  const timeLabel = months >= 12
-    ? `${Math.round(months / 12)} year${Math.round(months / 12) > 1 ? 's' : ''}`
-    : `${months} months`
   return {
-    planWeeks: 12, startDate, phase: 'base_block', phaseLabel: 'Base Block',
-    userMessage: `Your race is ${timeLabel} away — building fitness in 12-week blocks and reassessing as race day approaches.`,
-    weeksUntilRace: weeksFromToday,
+    planWeeks: totalWeeks, startDate, planType, phaseLabel,
+    userMessage, weeksUntilRace: weeksFromToday, phases,
   }
 }
 
@@ -365,78 +387,82 @@ function calculatePlanTiming(
 
 function buildPlanMultipliers(
   planWeeks: number,
+  planType:  PlanType,
   goalType:  string,
-  phase:     PlanPhase,
+  phases:    PhaseWeeks,
 ): { multipliers: number[]; peakMultiplier: number } {
-  const goal       = detectGoalType(goalType)
-  const isLong     = goal === 'marathon' || goal === '70.3' || goal === 'ironman'
-  const peakMult   = isLong ? 1.30 : 1.35
+  const peakMult = peakMultiplierForGoal(goalType)
 
-  // Race week (1-2 weeks): flat easy
-  if (planWeeks <= 2 || phase === 'race_week') {
-    const mults = planWeeks <= 1 ? [0.55] : [0.75, 0.55]
-    return { multipliers: mults.slice(0, planWeeks), peakMultiplier: peakMult }
-  }
+  if (planWeeks <= 1) return { multipliers: [0.55], peakMultiplier: peakMult }
 
-  // Race prep (3-5 weeks): maintain + taper, no real build
-  if (phase === 'race_prep' || planWeeks <= 5) {
-    const n = Math.min(planWeeks, 5)
-    const patterns: Record<number, number[]> = {
-      3: [0.90, 0.80, 0.55],
-      4: [0.95, 0.90, 0.80, 0.55],
-      5: [1.00, 0.95, 0.90, 0.80, 0.55],
-    }
-    return { multipliers: patterns[n] ?? [0.90, 0.80, 0.55], peakMultiplier: peakMult }
-  }
-
-  // Compressed (6-9 weeks): skip base, build straight to peak, 1 taper week
-  if (phase === 'compressed' || (planWeeks <= 9 && phase !== 'full')) {
-    const n      = planWeeks
-    const buildN = n - 1
+  // Race prep: hold close to current fitness, taper last week
+  if (planType === 'race_prep') {
     const mults: number[] = []
-    for (let w = 0; w < buildN; w++) {
-      const isRecovery = buildN >= 4 && (w + 1) % 3 === 0
+    const holdN = planWeeks - 1
+    for (let i = 0; i < holdN; i++) {
+      const frac = holdN > 1 ? i / (holdN - 1) : 0
+      mults.push(parseFloat((0.90 + frac * 0.10).toFixed(2)))
+    }
+    mults.push(0.65)
+    return { multipliers: mults, peakMultiplier: peakMult }
+  }
+
+  // Compressed: build from 1.10 to peak, 1 taper week
+  if (planType === 'compressed') {
+    const mults: number[] = []
+    const buildN = planWeeks - 1
+    for (let i = 0; i < buildN; i++) {
+      const isRecovery = buildN >= 4 && (i + 1) % 4 === 0
       if (isRecovery) {
         mults.push(0.85)
       } else {
-        const frac = w / Math.max(1, buildN - 1)
-        mults.push(parseFloat((1.05 + frac * (peakMult - 1.05)).toFixed(2)))
+        const frac = buildN > 1 ? i / (buildN - 1) : 0
+        mults.push(parseFloat((1.10 + frac * (peakMult - 1.10)).toFixed(2)))
       }
     }
-    return { multipliers: [...mults, 0.65], peakMultiplier: peakMult }
+    mults.push(0.65)
+    return { multipliers: mults, peakMultiplier: peakMult }
   }
 
-  // Full / base_block (10-12 weeks): standard canonical periodisation
-  const canonical12: number[] = isLong
-    ? [1.00, 1.05, 1.10, 0.85, 1.15, 1.20, 1.25, 0.90, 1.30, 0.85, 0.70, 0.50]
-    : [1.00, 1.05, 1.10, 0.85, 1.15, 1.20, 1.25, 0.90, 1.30, 1.35, 0.80, 0.55]
-
-  if (planWeeks === 12) return { multipliers: canonical12, peakMultiplier: peakMult }
-
-  // >12 weeks: prepend extra base weeks before the canonical 12
-  if (planWeeks > 12) {
-    const extraN = planWeeks - 12
-    const extra  = Array.from({ length: extraN }, (_, i) =>
-      parseFloat((0.80 + (i / extraN) * 0.20).toFixed(2)),
-    )
-    return { multipliers: [...extra, ...canonical12], peakMultiplier: peakMult }
+  // Base building: 1.00 → 1.15 over planWeeks, recovery every 4th week, no taper
+  if (planType === 'base_building') {
+    const mults: number[] = []
+    for (let i = 0; i < planWeeks; i++) {
+      const isRecovery = (i + 1) % 4 === 0
+      if (isRecovery) {
+        mults.push(0.85)
+      } else {
+        const frac = planWeeks > 1 ? i / (planWeeks - 1) : 0
+        mults.push(parseFloat((1.00 + frac * 0.15).toFixed(2)))
+      }
+    }
+    return { multipliers: mults, peakMultiplier: peakMult }
   }
 
-  // Compress canonical to planWeeks: keep taper intact, sample build weeks
-  const taperN   = isLong ? 3 : 2
-  const taperPart = canonical12.slice(-taperN)
-  const buildPart = canonical12.slice(0, -taperN)
-  const buildN    = planWeeks - taperN
+  // Standard / Extended / Long-term: always work backwards from race day.
+  // Fixed tail (week_from_end 0→4): race week, taper1, taper2, peak1, peak2
+  const mults: number[] = []
+  const tail    = [0.50, 0.65, 0.75, 1.35, 1.30]
+  const tailLen = Math.min(tail.length, planWeeks)
+  const buildLen = planWeeks - tailLen
 
-  if (buildN <= 0) {
-    return { multipliers: taperPart.slice(-planWeeks), peakMultiplier: peakMult }
+  // Build/base phase: progressive 1.00 → 1.20, recovery every 4th week
+  for (let i = 0; i < buildLen; i++) {
+    const isRecovery = (i + 1) % 4 === 0
+    if (isRecovery) {
+      mults.push(0.85)
+    } else {
+      const frac = buildLen > 1 ? i / (buildLen - 1) : 0
+      mults.push(parseFloat((1.00 + frac * 0.20).toFixed(2)))
+    }
   }
 
-  const sampledBuild = Array.from({ length: buildN }, (_, i) => {
-    const idx = Math.round(i * (buildPart.length - 1) / Math.max(1, buildN - 1))
-    return buildPart[Math.min(idx, buildPart.length - 1)]
-  })
-  return { multipliers: [...sampledBuild, ...taperPart], peakMultiplier: peakMult }
+  // Tail: add in reverse so race week (tail[0]=0.50) is the very last multiplier
+  for (let i = tailLen - 1; i >= 0; i--) {
+    mults.push(tail[i])
+  }
+
+  return { multipliers: mults, peakMultiplier: peakMult }
 }
 
 // ── Training day helpers ──────────────────────────────────────────────────────
@@ -838,7 +864,7 @@ function parseCoachNotes(notes: string): CoachNoteConstraints {
 
 // ── Base week construction ────────────────────────────────────────────────────
 
-function buildBaseWeek(ctx: UserContext, peakMultiplier: number, phase: PlanPhase): AiSession[] {
+function buildBaseWeek(ctx: UserContext, peakMultiplier: number, planType: PlanType): AiSession[] {
   const { disciplines, training_phase, preferences } = ctx.user
 
   // Discipline filtering — ONLY create sessions for athlete's chosen disciplines
@@ -869,9 +895,9 @@ function buildBaseWeek(ctx: UserContext, peakMultiplier: number, phase: PlanPhas
   const caps        = getCapsForGoal(level, goalType)
   const startPct    = isReturn ? 0.60 : 0.90
 
-  // No quality sessions during race week or race prep phases
+  // No quality sessions during race prep or base building (easy aerobic work only)
   const hasQuality = level !== 'beginner' && !isReturn
-    && phase !== 'race_week' && phase !== 'race_prep'
+    && planType !== 'race_prep' && planType !== 'base_building'
 
   // Week-1 km per discipline, capped so peak never exceeds goal cap
   function w1km(disc: string, cap: number): number {
@@ -1058,6 +1084,65 @@ function sessionsToRows(
   )
 }
 
+// ── Race week post-processing ─────────────────────────────────────────────────
+//
+// The final week of a race plan is partial (race day is rarely Sunday).
+// Strip sessions on/after race day, make pre-race sessions easy shakeouts,
+// and insert a RACE DAY marker on the actual race date.
+
+function processRaceWeek(
+  rows:       ReturnType<typeof sessionsToRows>,
+  finalWeek:  number,
+  raceDayDow: number,   // 0=Mon … 6=Sun (our schema convention)
+  planId:     string,
+  userId:     string,
+  raceDate:   Date,
+  eventType:  string,
+): ReturnType<typeof sessionsToRows> {
+  const nonFinal = rows.filter(r => r.week_number !== finalWeek)
+
+  // Sessions before race day → easy shakeouts at ~50% volume
+  const preRace = rows
+    .filter(r => r.week_number === finalWeek && r.day_of_week < raceDayDow)
+    .map(r => {
+      const shortMin = Math.max(20, Math.round((r.duration_minutes ?? 30) * 0.5))
+      const shortKm  = Math.max(3,  Math.round(((r.distance_km  ?? 5)  * 0.5) * 2) / 2)
+      return {
+        ...r,
+        session_type:       'recovery',
+        title:              r.title.replace(/Interval|Tempo|Speed|Long/g, 'Easy'),
+        description:        `${shortMin}min easy shakeout — stay loose, conserve energy. Conversation pace only.`,
+        session_structure:  [{ description: `${shortMin}min easy at Zone 1. Stop if you feel flat.` }],
+        coaching_rationale: 'Race week: movement without fatigue. Zone 1 throughout — protect your legs for race day.',
+        effort_zone:        'Zone 1',
+        duration_minutes:   shortMin,
+        distance_km:        shortKm,
+      }
+    })
+
+  // Race day marker session
+  const raceDayRow = {
+    plan_id:            planId,
+    user_id:            userId,
+    week_number:        finalWeek,
+    day_of_week:        raceDayDow,
+    scheduled_date:     format(raceDate, 'yyyy-MM-dd'),
+    discipline:         'rest' as const,
+    session_type:       'race',
+    title:              'RACE DAY 🏁',
+    description:        `${eventType || 'Race day'} — all your training has led to this.`,
+    session_structure:  [{ description: 'Race day. Trust your preparation and execute your plan.' }],
+    coaching_rationale: "You've done the work. Arrive rested, stay warm, race your plan. Enjoy every kilometre.",
+    effort_zone:        'Race effort',
+    target_pace:        null,
+    duration_minutes:   0,
+    distance_km:        0,
+    status:             'planned' as const,
+  }
+
+  return [...nonFinal, ...preRace, raceDayRow]
+}
+
 // ── Main entry point ──────────────────────────────────────────────────────────
 
 export async function generatePlanSkeleton(
@@ -1093,13 +1178,13 @@ export async function generatePlanSkeleton(
   const targetDate  = context.goal?.target_date as string | undefined
   const preferredStart = context.user.preferences.plan_start_date as string | undefined
 
-  const timing = calculatePlanTiming(targetDate, preferredStart)
-  const { multipliers, peakMultiplier } = buildPlanMultipliers(timing.planWeeks, goalType, timing.phase)
+  const timing = calculatePlanTiming(targetDate, preferredStart, context.user.training_phase as string)
+  const { multipliers, peakMultiplier } = buildPlanMultipliers(timing.planWeeks, timing.planType, goalType, timing.phases)
 
-  console.log('[PLAN] TIMING:', { planWeeks: timing.planWeeks, phase: timing.phase, startDate: format(timing.startDate, 'yyyy-MM-dd'), weeksUntilRace: timing.weeksUntilRace })
+  console.log('[PLAN] TIMING:', { planWeeks: timing.planWeeks, planType: timing.planType, startDate: format(timing.startDate, 'yyyy-MM-dd'), phases: timing.phases, weeksUntilRace: timing.weeksUntilRace })
   console.log('[PLAN] MULTIPLIERS:', multipliers)
 
-  const baseSessions = buildBaseWeek(context, peakMultiplier, timing.phase)
+  const baseSessions = buildBaseWeek(context, peakMultiplier, timing.planType)
   const allWeeks     = expandPlan(baseSessions, multipliers)
   const startDate    = timing.startDate
 
@@ -1107,20 +1192,28 @@ export async function generatePlanSkeleton(
 
   // Store plan timeline metadata in preferences — avoids needing schema changes
   const updatedPrefs = { ...(context.user.preferences as Record<string, unknown>) }
-  if (timing.userMessage) updatedPrefs.pre_plan_message  = timing.userMessage
+  if (timing.userMessage) updatedPrefs.pre_plan_message = timing.userMessage
   else delete updatedPrefs.pre_plan_message
-  if (timing.phaseLabel)   updatedPrefs.plan_phase_label = timing.phaseLabel
-  else delete updatedPrefs.plan_phase_label
-  if (timing.nextBlockDate) updatedPrefs.next_block_date = timing.nextBlockDate
-  else delete updatedPrefs.next_block_date
+  updatedPrefs.plan_phase_label    = timing.phaseLabel
+  // Phase boundary weeks (for dashboard block-label computation)
+  updatedPrefs.plan_base_end_week  = timing.phases.baseWeeks
+  updatedPrefs.plan_build_end_week = timing.phases.baseWeeks + timing.phases.buildWeeks
+  updatedPrefs.plan_peak_end_week  = timing.phases.baseWeeks + timing.phases.buildWeeks + timing.phases.peakWeeks
+  delete updatedPrefs.next_block_date
   await supabase.from('users').update({ preferences: updatedPrefs }).eq('id', userId)
+
+  const isRacePlan = timing.planType !== 'base_building'
+  const raceDate   = (targetDate && isRacePlan) ? new Date(targetDate + 'T12:00:00') : null
+  const planEndDate = raceDate
+    ? format(raceDate, 'yyyy-MM-dd')
+    : format(addDays(startDate, timing.planWeeks * 7 - 1), 'yyyy-MM-dd')
 
   const { data: plan, error: planError } = await supabase
     .from('training_plans')
     .insert({
       user_id:     userId,
       start_date:  format(startDate, 'yyyy-MM-dd'),
-      end_date:    format(addDays(startDate, timing.planWeeks * 7 - 1), 'yyyy-MM-dd'),
+      end_date:    planEndDate,
       total_weeks: timing.planWeeks,
       status:      'active',
     })
@@ -1129,7 +1222,17 @@ export async function generatePlanSkeleton(
 
   if (planError) throw new Error(`Failed to create training plan: ${planError.message}`)
 
-  const rows = sessionsToRows(plan.id, userId, allWeeks, startDate, context.user.preferences)
+  let rows = sessionsToRows(plan.id, userId, allWeeks, startDate, context.user.preferences)
+
+  // Inject race week: strip sessions on/after race day, add RACE DAY marker
+  if (raceDate && timing.planWeeks > 0) {
+    const jsRaceDay  = raceDate.getDay()                  // 0=Sun … 6=Sat
+    const raceDayDow = (jsRaceDay + 6) % 7               // 0=Mon … 6=Sun
+    const eventType  = context.goal?.event_type ?? ''
+    rows = processRaceWeek(rows, timing.planWeeks, raceDayDow, plan.id, userId, raceDate, eventType)
+    console.log(`[PLAN] Race week processed: raceDayDow=${raceDayDow} (${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][raceDayDow]})`)
+  }
+
   if (rows.length > 0) {
     await supabase.from('sessions').insert(rows)
   }

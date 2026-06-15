@@ -188,6 +188,24 @@ router.post('/coach-chat', async (req, res) => {
     const context = await buildUserContext(userId)
     const client = new Anthropic()
 
+    // Fetch current week + next 2 weeks of sessions (all active statuses)
+    const today = new Date()
+    const dayOfWeek = today.getDay()
+    const offset = (dayOfWeek + 6) % 7
+    const weekStart = new Date(today)
+    weekStart.setDate(today.getDate() - offset)
+    const twoWeeksEnd = new Date(weekStart)
+    twoWeeksEnd.setDate(weekStart.getDate() + 13)
+
+    const { data: planSessions } = await supabase
+      .from('sessions')
+      .select('id, title, scheduled_date, discipline, duration_minutes, distance_km, session_type, status')
+      .eq('user_id', userId)
+      .in('status', ['planned', 'modified'])
+      .gte('scheduled_date', weekStart.toISOString().split('T')[0])
+      .lte('scheduled_date', twoWeeksEnd.toISOString().split('T')[0])
+      .order('scheduled_date')
+
     const recentWorkouts = context.recent_workouts.slice(0, 5)
       .map(w => `  ${w.date}: ${w.discipline} ${w.session_type}${w.actual_distance_km ? ' ' + w.actual_distance_km + 'km' : ''}${w.rpe ? ' RPE ' + w.rpe : ''}${w.note ? ' — "' + w.note + '"' : ''}`)
       .join('\n')
@@ -196,24 +214,70 @@ router.post('/coach-chat', async (req, res) => {
       .map(c => `  ${c.date}: feeling ${c.feeling}/5${c.soreness_notes ? ' ('+c.soreness_notes+')' : ''}`)
       .join('\n')
 
+    const sessionsStr = planSessions?.length
+      ? planSessions.map(s => {
+          const d = new Date(s.scheduled_date + 'T12:00:00')
+          const dayStr = d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })
+          const km  = s.distance_km    ? ` ${s.distance_km}km`    : ''
+          const min = s.duration_minutes ? ` ${s.duration_minutes}min` : ''
+          return `  ID:${s.id} · ${dayStr} · ${s.discipline} · ${s.title}${km}${min}`
+        }).join('\n')
+      : '  No sessions found for the next 2 weeks'
+
+    console.log('[COACH-CHAT] sessions passed to AI:\n', sessionsStr)
+
     const systemPrompt = `${COACH_SYSTEM_PROMPT}
 
-CURRENT ATHLETE CONTEXT:
+ATHLETE CONTEXT:
 Name: ${context.user.name}
 Disciplines: ${context.user.disciplines.join(', ')}
 Phase: ${context.user.training_phase}
-Week: ${context.current_week} of 12
+Week: ${context.current_week}
 Goal: ${context.goal?.event_type ?? 'general fitness'}${context.goal?.days_until_event != null ? ` — ${context.goal.days_until_event} days away` : ''}
 ${context.injury_flags ? 'INJURY FLAG: athlete has flagged an injury recently' : ''}
-${context.user.coach_notes_freetext ? `\nATHLETE'S OWN NOTES TO COACH: "${context.user.coach_notes_freetext}"\nReference these preferences naturally when relevant — don't repeat them verbatim every message, but keep them in mind when giving advice.` : ''}
+${context.user.coach_notes_freetext ? `Athlete notes: "${context.user.coach_notes_freetext}"` : ''}
 
 Recent workouts:
-${recentWorkouts || '  No recent workouts'}
+${recentWorkouts || '  None'}
 
 Recent check-ins:
-${recentCheckins || '  No recent check-ins'}
+${recentCheckins || '  None'}
 
-Reply in 2-4 sentences max. Be direct and coach-like. Reference specific data from context when relevant.`
+CURRENT + UPCOMING SESSIONS — use these exact IDs in proposedChanges:
+${sessionsStr}
+
+━━━ OUTPUT RULES ━━━
+You MUST always reply with valid JSON only — no markdown, no text outside the JSON object:
+{
+  "reply": "your coaching response (2-4 sentences)",
+  "proposedChanges": []
+}
+
+WHEN TO POPULATE proposedChanges:
+If the athlete says they can't do a session, wants to swap/skip/replace/adjust ANY session,
+mentions injury, fatigue, or travel — you MUST put the actual changes in proposedChanges.
+Do NOT just describe changes in the reply text. Put them in proposedChanges so the athlete can accept them.
+
+proposedChanges format (use exact IDs from the session list above):
+[
+  {
+    "sessionId": "exact-uuid-from-list-above",
+    "date": "Mon 16 Jun",
+    "originalTitle": "Base Swim 2km",
+    "newTitle": "Easy Run 6km",
+    "originalDuration": 60,
+    "newDuration": 45,
+    "originalType": "base",
+    "newType": "easy",
+    "originalDiscipline": "swim",
+    "newDiscipline": "run",
+    "reason": "Athlete can't swim this week — swapped to run at equivalent aerobic load"
+  }
+]
+
+Set proposedChanges to [] when the athlete is just chatting with no plan change needed.`
+
+    console.log('[COACH-CHAT] message:', message)
 
     const messages = [
       ...(history as Array<{ role: string; content: string }>).slice(-10).map(m => ({
@@ -225,19 +289,77 @@ Reply in 2-4 sentences max. Be direct and coach-like. Reference specific data fr
 
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 300,
+      max_tokens: 800,
       system: systemPrompt,
       messages,
     })
 
-    const reply = response.content[0]?.type === 'text'
-      ? response.content[0].text
-      : "I'm here — what's on your mind?"
+    const raw = response.content[0]?.type === 'text' ? response.content[0].text : '{}'
+    console.log('[COACH-CHAT] raw AI response:', raw)
 
-    res.json({ reply })
+    let reply = "I'm here — what's on your mind?"
+    let proposedChanges: any[] = []
+
+    try {
+      let parsed: { reply?: string; proposedChanges?: any[] } | null = null
+
+      try { parsed = JSON.parse(raw) } catch {}
+
+      if (!parsed) {
+        const jsonStart = raw.indexOf('{')
+        const jsonEnd   = raw.lastIndexOf('}') + 1
+        if (jsonStart !== -1 && jsonEnd > jsonStart) {
+          try { parsed = JSON.parse(raw.slice(jsonStart, jsonEnd)) } catch {}
+        }
+      }
+
+      if (parsed?.reply) reply = parsed.reply
+      if (Array.isArray(parsed?.proposedChanges)) proposedChanges = parsed.proposedChanges
+      if (!parsed?.reply) {
+        const m = raw.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/)
+        if (m) reply = m[1].replace(/\\n/g, '\n').replace(/\\"/g, '"')
+        else reply = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+      }
+    } catch {
+      reply = "Something went wrong on my end. Try again?"
+    }
+
+    console.log('[COACH-CHAT] reply:', reply, '| changes:', proposedChanges.length)
+    res.json({ reply, proposedChanges })
   } catch (err: any) {
     console.error('coach-chat error:', err)
     res.status(500).json({ error: err.message ?? 'Coach chat failed' })
+  }
+})
+
+router.post('/apply-plan-changes', async (req, res) => {
+  try {
+    const { userId, changes } = req.body
+    if (!userId || !Array.isArray(changes)) {
+      return res.status(400).json({ error: 'userId and changes[] required' })
+    }
+
+    for (const change of changes) {
+      const { data: session } = await supabase
+        .from('sessions').select('*').eq('id', change.sessionId).single()
+      if (!session) continue
+
+      await supabase.from('sessions').update({
+        title:               change.newTitle       ?? session.title,
+        discipline:          change.newDiscipline  ?? session.discipline,
+        session_type:        change.newType        ?? session.session_type,
+        duration_minutes:    change.newDuration    ?? session.duration_minutes,
+        effort_zone:         change.newEffortZone  ?? (change.newType === 'easy' || change.newType === 'recovery' ? 'Zone 2' : session.effort_zone),
+        status:              'modified',
+        original_data:       session.original_data ?? session,
+        modification_reason: change.reason         ?? 'Coach suggested adjustment',
+      }).eq('id', change.sessionId)
+    }
+
+    res.json({ success: true, applied: changes.length })
+  } catch (err: any) {
+    console.error('apply-plan-changes error:', err)
+    res.status(500).json({ error: err.message ?? 'Apply changes failed' })
   }
 })
 

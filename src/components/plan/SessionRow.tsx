@@ -8,9 +8,10 @@ import WorkoutLogModal from '../modals/WorkoutLogModal'
 interface Props {
   session: Session
   dayLabel: string
+  showOriginal?: boolean
 }
 
-export default function SessionRow({ session, dayLabel }: Props) {
+export default function SessionRow({ session, dayLabel, showOriginal = false }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [showLog, setShowLog] = useState(false)
   const [showNote, setShowNote] = useState(false)
@@ -24,10 +25,15 @@ export default function SessionRow({ session, dayLabel }: Props) {
   const isModified = session.status === 'modified'
   const dotColor   = disciplineColor[session.discipline]
 
-  const durationLabel = session.duration_minutes
-    ? session.duration_minutes >= 60
-      ? `${Math.floor(session.duration_minutes / 60)}h ${session.duration_minutes % 60 > 0 ? session.duration_minutes % 60 + 'min' : ''}`
-      : `${session.duration_minutes}min`
+  const orig = (isModified && showOriginal && session.original_data) ? session.original_data as Session : null
+  const displayTitle    = orig ? orig.title    : session.title
+  const displayDuration = orig ? orig.duration_minutes : session.duration_minutes
+  const displayDesc     = orig ? orig.description : session.description
+
+  const durationLabel = displayDuration
+    ? displayDuration >= 60
+      ? `${Math.floor(displayDuration / 60)}h ${displayDuration % 60 > 0 ? displayDuration % 60 + 'min' : ''}`
+      : `${displayDuration}min`
     : '—'
 
   async function saveNote() {
@@ -56,21 +62,23 @@ export default function SessionRow({ session, dayLabel }: Props) {
           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: dotColor }} />
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-2">
-              <span className={`font-semibold text-sm ${isComplete || isMissed ? 'text-gray-400' : 'text-black'}`}>
-                {session.title}
+              <span className={`text-[15px] font-medium ${isComplete || isMissed ? 'text-gray-400' : 'text-black'}`}>
+                {displayTitle}
               </span>
               {isModified && (
-                <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">Modified</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${showOriginal ? 'bg-gray-100 text-gray-500' : 'bg-amber-100 text-amber-700'}`}>
+                  {showOriginal ? 'Original' : 'Modified'}
+                </span>
               )}
             </div>
-            {session.description && (
-              <p className="text-xs text-gray-400 truncate">{session.description}</p>
+            {displayDesc && (
+              <p className="text-[13px] text-gray-500 truncate">{displayDesc}</p>
             )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {isComplete && <span className="text-[10px] text-green-500">✓</span>}
             {isMissed && <span className="text-[10px] text-red-400">Missed</span>}
-            <span className="text-xs text-gray-400">{isRest ? '—' : durationLabel}</span>
+            <span className="text-[13px] text-gray-500">{isRest ? '—' : durationLabel}</span>
             <span className="text-gray-300 text-sm">{expanded ? '∧' : '∨'}</span>
           </div>
         </button>
@@ -87,7 +95,7 @@ export default function SessionRow({ session, dayLabel }: Props) {
             {/* Modification reason */}
             {isModified && session.modification_reason && (
               <div className="bg-amber-50 rounded-xl px-3 py-2.5">
-                <div className="text-[10px] font-semibold text-amber-600 uppercase tracking-widest mb-1">Why this changed</div>
+                <div className="text-xs font-medium text-amber-600 uppercase tracking-wider mb-1">Why this changed</div>
                 <p className="text-sm text-amber-800 leading-relaxed">{session.modification_reason}</p>
               </div>
             )}
@@ -95,8 +103,8 @@ export default function SessionRow({ session, dayLabel }: Props) {
             {/* Coaching rationale */}
             {session.coaching_rationale && !isMissed && (
               <div className="bg-gray-50 rounded-xl px-3 py-2.5">
-                <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1">Why this session</div>
-                <p className="text-sm text-gray-700 leading-relaxed">{session.coaching_rationale}</p>
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Why this session</div>
+                <p className="text-[14px] text-gray-700 leading-relaxed">{session.coaching_rationale}</p>
               </div>
             )}
 
@@ -104,7 +112,7 @@ export default function SessionRow({ session, dayLabel }: Props) {
             <div className="grid grid-cols-2 gap-2">
               {session.target_pace && (
                 <div className="bg-gray-50 rounded-xl px-3 py-2">
-                  <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-0.5">
+                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-0.5">
                     {session.discipline === 'ride' ? 'Target speed' : session.discipline === 'swim' ? 'Target pace' : 'Target pace'}
                   </div>
                   <div className="text-sm font-semibold">{session.target_pace}</div>
@@ -112,7 +120,7 @@ export default function SessionRow({ session, dayLabel }: Props) {
               )}
               {session.effort_zone && (
                 <div className="bg-gray-50 rounded-xl px-3 py-2">
-                  <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-0.5">Effort</div>
+                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-0.5">Effort</div>
                   <div className="text-sm font-semibold">{session.effort_zone}</div>
                 </div>
               )}
@@ -121,10 +129,10 @@ export default function SessionRow({ session, dayLabel }: Props) {
             {/* Session structure */}
             {session.session_structure && session.session_structure.length > 0 && (
               <div>
-                <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Session structure</div>
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Session structure</div>
                 <ol className="space-y-1">
                   {session.session_structure.map((step, i) => (
-                    <li key={i} className="flex gap-2 text-sm text-gray-700">
+                    <li key={i} className="flex gap-2 text-[14px] text-gray-700">
                       <span className="text-gray-400 flex-shrink-0">{i + 1}.</span>
                       <span>{step.description}</span>
                     </li>

@@ -127,10 +127,10 @@ export default function ProgressPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white px-5 pt-14 pb-5">
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Volume & Consistency</div>
+      <div className="bg-white px-6 pt-14 pb-5">
+        <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Volume & Consistency</div>
         <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Progress</h1>
+          <h1 className="text-2xl font-semibold">Progress</h1>
           <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
             <button
               onClick={() => setMode('distance')}
@@ -148,7 +148,7 @@ export default function ProgressPage() {
         </div>
       </div>
 
-      <div className="px-4 pt-5 space-y-5 pb-6">
+      <div className="px-6 pt-6 space-y-6 pb-6">
         {trend && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex items-center gap-3">
             <span className="text-xl">{trend.direction === 'up' ? '📈' : '📉'}</span>
@@ -164,7 +164,7 @@ export default function ProgressPage() {
 
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
           <div className="flex items-center justify-between mb-4">
-            <span className="font-semibold text-sm">Weekly volume</span>
+            <span className="text-[15px] font-semibold">Weekly volume</span>
             <div className="flex gap-3 text-xs">
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" />Swim</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500" />Ride</span>
@@ -193,8 +193,8 @@ export default function ProgressPage() {
                   <div className="flex items-center gap-3">
                     <span className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-sm">🏃</span>
                     <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Fastest run pace</p>
-                      <p className="font-bold text-lg">{pbs.run.pace}</p>
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Fastest run pace</p>
+                      <p className="text-[18px] font-semibold">{pbs.run.pace}</p>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400">{pbs.run.date}</p>
@@ -205,8 +205,8 @@ export default function ProgressPage() {
                   <div className="flex items-center gap-3">
                     <span className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-sm">📏</span>
                     <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Longest run</p>
-                      <p className="font-bold text-lg">{pbs.longestRun.distance_km.toFixed(1)}km</p>
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Longest run</p>
+                      <p className="text-[18px] font-semibold">{pbs.longestRun.distance_km.toFixed(1)}km</p>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400">{pbs.longestRun.date}</p>
@@ -217,8 +217,8 @@ export default function ProgressPage() {
                   <div className="flex items-center gap-3">
                     <span className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-sm">🚴</span>
                     <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Fastest ride pace</p>
-                      <p className="font-bold text-lg">{pbs.ride.pace}</p>
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Fastest ride pace</p>
+                      <p className="text-[18px] font-semibold">{pbs.ride.pace}</p>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400">{pbs.ride.date}</p>
@@ -229,8 +229,8 @@ export default function ProgressPage() {
                   <div className="flex items-center gap-3">
                     <span className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-sm">📏</span>
                     <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Longest ride</p>
-                      <p className="font-bold text-lg">{pbs.longestRide.distance_km.toFixed(1)}km</p>
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Longest ride</p>
+                      <p className="text-[18px] font-semibold">{pbs.longestRide.distance_km.toFixed(1)}km</p>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400">{pbs.longestRide.date}</p>
@@ -241,8 +241,8 @@ export default function ProgressPage() {
                   <div className="flex items-center gap-3">
                     <span className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm">🏊</span>
                     <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Fastest swim pace</p>
-                      <p className="font-bold text-lg">{pbs.swim.pace}</p>
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Fastest swim pace</p>
+                      <p className="text-[18px] font-semibold">{pbs.swim.pace}</p>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400">{pbs.swim.date}</p>
@@ -253,8 +253,8 @@ export default function ProgressPage() {
                   <div className="flex items-center gap-3">
                     <span className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm">📏</span>
                     <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Longest swim</p>
-                      <p className="font-bold text-lg">{(pbs.longestSwim.distance_km * 1000).toFixed(0)}m</p>
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Longest swim</p>
+                      <p className="text-[18px] font-semibold">{(pbs.longestSwim.distance_km * 1000).toFixed(0)}m</p>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400">{pbs.longestSwim.date}</p>

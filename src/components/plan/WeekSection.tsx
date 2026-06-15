@@ -1,23 +1,28 @@
 import { useState } from 'react'
-import { isSameWeek, parseISO } from 'date-fns'
+import { ChevronRight } from 'lucide-react'
+import { isSameWeek, parseISO, addDays, format } from 'date-fns'
 import type { Session } from '../../types'
 import SessionRow from './SessionRow'
 
 interface Props {
   weekNumber: number
+  totalWeeks: number
   sessions: Session[]
   today: Date
+  planStartDate?: string
+  showOriginal?: boolean
 }
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-// Maps week number to load type using the same periodisation multipliers
-function weekLoadBadge(week: number): { emoji: string; label: string; tooltip: string; color: string } {
-  if (week === 12) return { emoji: '⚪', label: 'Taper', tooltip: 'Minimal volume, race-pace efforts only. Trust the work you\'ve done.', color: 'text-gray-500' }
-  if (week === 4 || week === 8) return { emoji: '🔵', label: 'Recovery', tooltip: 'Volume drops 30-40%. Your body adapts during rest — protect it.', color: 'text-blue-500' }
-  if (week >= 9 && week <= 11) return { emoji: '🔴', label: 'Peak', tooltip: 'Highest volume week. This is where fitness is built — stay consistent.', color: 'text-red-500' }
-  if (week >= 5 && week <= 7) return { emoji: '🟡', label: 'Build', tooltip: 'Volume increasing. Quality sessions are key this block.', color: 'text-yellow-500' }
-  return { emoji: '🟢', label: 'Base', tooltip: 'Foundation building. Keep easy sessions genuinely easy.', color: 'text-green-600' }
+function getPhaseLabel(weekNumber: number, totalWeeks: number): { label: string; color: string } {
+  const weeksFromEnd = totalWeeks - weekNumber
+  if (weeksFromEnd === 0) return { label: 'Race Week', color: 'text-amber-500' }
+  if (weeksFromEnd <= 2)  return { label: 'Taper',     color: 'text-gray-500'  }
+  if (weeksFromEnd <= 4)  return { label: 'Peak',      color: 'text-red-500'   }
+  const buildStart = Math.floor(totalWeeks * 0.4)
+  if (weekNumber <= buildStart) return { label: 'Base',  color: 'text-blue-500'  }
+  return { label: 'Build', color: 'text-amber-500' }
 }
 
 function volumeSummary(sessions: Session[]) {
@@ -27,64 +32,68 @@ function volumeSummary(sessions: Session[]) {
   return { swim, ride, run }
 }
 
-export default function WeekSection({ weekNumber, sessions, today }: Props) {
-  const [showTooltip, setShowTooltip] = useState(false)
-
+export default function WeekSection({ weekNumber, totalWeeks, sessions, today, planStartDate, showOriginal = false }: Props) {
   const sorted = [...sessions].sort((a, b) => a.day_of_week - b.day_of_week)
   const firstSession = sorted[0]
   const isCurrentWeek = firstSession
     ? isSameWeek(parseISO(firstSession.scheduled_date), today, { weekStartsOn: 1 })
     : false
 
-  const vol  = volumeSummary(sessions)
-  const badge = weekLoadBadge(weekNumber)
+  const [isExpanded, setIsExpanded] = useState(isCurrentWeek)
+
+  const vol   = volumeSummary(sessions)
+  const badge = getPhaseLabel(weekNumber, totalWeeks)
+
+  const wcLabel = planStartDate
+    ? `w/c ${format(addDays(parseISO(planStartDate), (weekNumber - 1) * 7), 'd MMM')}`
+    : null
 
   return (
     <div>
-      {/* Week header */}
-      <div className="flex items-center justify-between mb-3">
+      {/* Collapsed / header row — always clickable */}
+      <button
+        className="w-full flex items-center justify-between mb-2 text-left group"
+        onClick={() => setIsExpanded(e => !e)}
+      >
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
-            Week {weekNumber}
+          <span className="text-sm font-semibold text-gray-700">
+            Week {weekNumber}{wcLabel ? ` · ${wcLabel}` : ''}
           </span>
           {isCurrentWeek && (
-            <span className="text-[10px] font-semibold bg-black text-white px-2 py-0.5 rounded-full uppercase tracking-widest">
+            <span className="text-xs font-medium bg-black text-white px-2 py-0.5 rounded-full">
               This week
             </span>
           )}
-          {/* Load badge (#9) */}
-          <div className="relative">
-            <button
-              className={`text-[11px] font-medium flex items-center gap-1 ${badge.color}`}
-              onMouseEnter={() => setShowTooltip(true)}
-              onMouseLeave={() => setShowTooltip(false)}
-              onTouchStart={() => setShowTooltip(v => !v)}
-            >
-              {badge.emoji} {badge.label}
-            </button>
-            {showTooltip && (
-              <div className="absolute top-full left-0 mt-1 z-10 bg-gray-900 text-white text-xs rounded-xl px-3 py-2 w-52 shadow-lg">
-                {badge.tooltip}
-              </div>
-            )}
-          </div>
+          <span className={`text-xs font-medium ${badge.color}`}>{badge.label}</span>
         </div>
-        <div className="flex gap-3 text-xs">
-          {vol.swim > 0 && <span className="text-blue-500 font-medium">Swim {vol.swim.toFixed(1)}km</span>}
-          {vol.ride > 0 && <span className="text-orange-500 font-medium">Ride {vol.ride}km</span>}
-          {vol.run  > 0 && <span className="text-green-500 font-medium">Run {vol.run}km</span>}
-        </div>
-      </div>
 
-      <div className="space-y-2">
-        {sorted.map(session => (
-          <SessionRow
-            key={session.id}
-            session={session}
-            dayLabel={DAY_LABELS[session.day_of_week]}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Volume summary — always visible */}
+          <div className="flex gap-2 text-xs">
+            {vol.swim > 0 && <span className="text-blue-500 font-medium">🏊 {vol.swim.toFixed(1)}km</span>}
+            {vol.ride > 0 && <span className="text-orange-500 font-medium">🚴 {vol.ride}km</span>}
+            {vol.run  > 0 && <span className="text-green-500 font-medium">🏃 {vol.run}km</span>}
+          </div>
+          <ChevronRight
+            size={16}
+            className={`text-gray-400 transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`}
           />
-        ))}
-      </div>
+        </div>
+      </button>
+
+      {/* Sessions — only when expanded */}
+      {isExpanded && (
+        <div className="space-y-2">
+          {sorted.map(session => (
+            <SessionRow
+              key={session.id}
+              session={session}
+              dayLabel={DAY_LABELS[session.day_of_week]}
+              showOriginal={showOriginal}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

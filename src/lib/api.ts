@@ -48,5 +48,22 @@ export const api = {
     userId: string
     message: string
     history: Array<{ role: 'user' | 'assistant'; content: string }>
-  }) => post<{ reply: string }>('/ai/coach-chat', params),
+  }) => post<{ reply: string; proposedChanges: ProposedChange[] }>('/ai/coach-chat', params),
+
+  applyPlanChanges: (params: { userId: string; changes: ProposedChange[] }) =>
+    post<{ success: boolean; applied: number }>('/ai/apply-plan-changes', params),
+}
+
+export interface ProposedChange {
+  sessionId:          string
+  date:               string
+  originalTitle:      string
+  newTitle:           string
+  originalDuration:   number
+  newDuration:        number
+  originalType:       string
+  newType:            string
+  originalDiscipline?: string
+  newDiscipline?:      string
+  reason:             string
 }

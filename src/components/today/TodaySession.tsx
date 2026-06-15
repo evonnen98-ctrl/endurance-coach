@@ -32,6 +32,7 @@ export default function TodaySession({ session, checkin, weekSessions = [] }: Pr
 
   const isComplete = session.status === 'complete' || justCompleted
   const isRest     = session.discipline === 'rest'
+  const isRaceDay  = session.session_type === 'race'
 
   const completedThisWeek = weekSessions.filter(s => s.status === 'complete' || (s.id === session.id && justCompleted)).length
   const totalThisWeek     = weekSessions.filter(s => s.discipline !== 'rest').length
@@ -57,39 +58,83 @@ export default function TodaySession({ session, checkin, weekSessions = [] }: Pr
     setJustCompleted(true)
   }
 
-  const tagClass  = disciplineBg[session.discipline]
+  const tagClass   = disciplineBg[session.discipline]
+
+  const leftBorderColor: Record<string, string> = {
+    swim: '#3B82F6', ride: '#F97316', run: '#22C55E',
+    rest: '#9CA3AF', brick: '#F97316',
+  }
+  const accentColor = leftBorderColor[session.discipline] ?? '#9CA3AF'
+
+  // Race day: special celebratory card
+  if (isRaceDay) {
+    return (
+      <div className="mx-6 bg-gradient-to-br from-black to-gray-900 rounded-2xl overflow-hidden shadow-lg">
+        <div className="px-6 pt-6 pb-4 text-center">
+          <p className="text-5xl mb-3">🏁</p>
+          <h2 className="text-[22px] font-bold text-white leading-snug">{session.title}</h2>
+          {session.description && (
+            <p className="text-[14px] text-gray-300 mt-2 leading-relaxed">{session.description}</p>
+          )}
+        </div>
+        <div className="mx-4 mb-4 bg-white/10 rounded-xl px-4 py-3 text-center">
+          <p className="text-[13px] text-gray-200 leading-relaxed">
+            Your training is done. Trust your preparation and race your race.
+          </p>
+        </div>
+        <div className="px-4 pb-4">
+          <button
+            onClick={markComplete}
+            disabled={completing || isComplete}
+            className="w-full py-3.5 bg-white text-black font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
+          >
+            {completing ? (
+              <span className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+            ) : isComplete ? (
+              <span>Race completed 🎉</span>
+            ) : (
+              <span>Mark race complete</span>
+            )}
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <>
-      <div className="mx-4 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div
+        className="mx-6 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
+        style={{ borderLeft: `4px solid ${accentColor}` }}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-4 pt-4 pb-2">
-          <span className={`text-[11px] font-semibold uppercase tracking-widest px-2.5 py-1 rounded-full ${tagClass}`}>
+          <span className={`text-xs font-medium uppercase tracking-wider px-2.5 py-1 rounded-full ${tagClass}`}>
             {disciplineLabel[session.discipline]}
           </span>
-          <span className="text-gray-400 text-sm">
+          <span className="text-[13px] text-gray-500">
             {session.duration_minutes ? `${session.duration_minutes}min` : '—'}
           </span>
         </div>
 
         {/* Title */}
         <div className="px-4 pb-3">
-          <h2 className="text-xl font-bold">{session.title}</h2>
+          <h2 className="text-[18px] font-semibold leading-snug">{session.title}</h2>
           {session.description && (
-            <p className="text-gray-500 text-sm mt-0.5">{session.description}</p>
+            <p className="text-[14px] text-gray-500 mt-1 leading-relaxed">{session.description}</p>
           )}
         </div>
 
         {/* Checkin response or coaching rationale */}
         {checkin?.coach_response ? (
-          <div className={`mx-4 mb-4 px-3 py-2.5 rounded-lg text-sm ${
-            checkin.plan_adjusted ? 'bg-amber-50 text-amber-800' : 'bg-gray-50 text-gray-700'
+          <div className={`mx-4 mb-4 px-3 py-2.5 rounded-lg text-[14px] ${
+            checkin.plan_adjusted ? 'bg-amber-50 text-amber-800' : 'bg-gray-50 text-gray-600'
           }`}>
             <span className="font-medium">Coach: </span>{checkin.coach_response}
           </div>
         ) : session.coaching_rationale ? (
-          <div className="mx-4 mb-4 px-3 py-2.5 bg-gray-50 rounded-lg text-sm text-gray-700">
-            <span className="font-medium">Coach: </span>{session.coaching_rationale}
+          <div className="mx-4 mb-4 px-3 py-2.5 bg-gray-50 rounded-lg text-[14px] text-gray-500 italic">
+            <span className="font-medium not-italic">Coach: </span>{session.coaching_rationale}
           </div>
         ) : null}
 

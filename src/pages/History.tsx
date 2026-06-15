@@ -32,12 +32,12 @@ export default function HistoryPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white px-5 pt-14 pb-5">
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">All sessions</div>
-        <h1 className="text-3xl font-bold">History</h1>
+      <div className="bg-white px-6 pt-14 pb-5">
+        <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">All sessions</div>
+        <h1 className="text-2xl font-semibold">History</h1>
       </div>
 
-      <div className="px-4 pt-5 pb-6">
+      <div className="px-6 pt-6 pb-6">
         {workoutLogs.length === 0 ? (
           <div className="text-center py-16 text-gray-400 text-sm">
             No workouts logged yet. Complete a session to see your history here.
