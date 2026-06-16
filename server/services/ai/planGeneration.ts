@@ -66,10 +66,24 @@ const SESSION_TYPE_RATIO: Record<string, number> = {
   brick:    0.80,
 }
 
-function kmToMin(disc: string, type: string, km: number): number {
-  const perKm = disc === 'run'
-    ? (type === 'interval' ? 5.0 : type === 'tempo' ? 5.5 : 6.5)
-    : disc === 'ride' ? 2.2 : 30
+// Fix 6: Fitness-level pace defaults (seconds/km)
+const PACE_DEFAULTS_SEC: Record<string, { easy: number; tempo: number; interval: number }> = {
+  beginner:     { easy: 450, tempo: 405, interval: 360 },  // 7:30, 6:45, 6:00
+  intermediate: { easy: 360, tempo: 315, interval: 285 },  // 6:00, 5:15, 4:45
+  advanced:     { easy: 330, tempo: 285, interval: 255 },  // 5:30, 4:45, 4:15
+  competitive:  { easy: 300, tempo: 255, interval: 225 },  // 5:00, 4:15, 3:45
+}
+
+function kmToMin(disc: string, type: string, km: number, level = 'intermediate'): number {
+  let perKm: number
+  if (disc === 'run') {
+    const def = PACE_DEFAULTS_SEC[level] ?? PACE_DEFAULTS_SEC.intermediate
+    perKm = (type === 'interval' || type === 'speed') ? def.interval / 60
+           : type === 'tempo' ? def.tempo / 60
+           : def.easy / 60
+  } else {
+    perKm = disc === 'ride' ? 2.2 : 30
+  }
   const base = Math.round(km * perKm)
   return Math.max(10, type === 'interval' ? base + 20 : base)
 }
@@ -112,8 +126,8 @@ function calcWeekLongKm(
     return round1(peakLong * (weeksFromEnd === 3 ? 0.95 : 1.00))
   }
 
-  // Recovery every 4th week: 80% of where progression would be
-  if (weekNumber % 4 === 0) {
+  // Recovery every 4th week: only during base/early build, never in peak or taper
+  if (weekNumber % 4 === 0 && weeksFromEnd > 5) {
     const prog = week1Long + ((peakLong - week1Long) / (taperStart - 1)) * (weekNumber - 1)
     return round1(prog * 0.80)
   }
@@ -137,13 +151,21 @@ function formatPace(sec: number): string {
 }
 
 function computeTargetPace(disc: string, type: string, prefs: Record<string, string | number>): string | null {
+  const level = (prefs.fitness_level as string) ?? 'intermediate'
   if (disc === 'run') {
     const raw = prefs.run_pace_easy as string | undefined
-    if (!raw) return null
-    const sec = parsePaceSec(raw)
-    if (type === 'easy' || type === 'long' || type === 'base' || type === 'recovery') return `${raw}/km`
-    if (type === 'tempo') return `${formatPace(sec - 45)}/km`
-    if (type === 'interval' || type === 'speed') return `${formatPace(sec - 75)}/km`
+    if (raw) {
+      const sec = parsePaceSec(raw)
+      if (type === 'easy' || type === 'long' || type === 'base' || type === 'recovery') return `${raw}/km`
+      if (type === 'tempo') return `${formatPace(sec - 45)}/km`
+      if (type === 'interval' || type === 'speed') return `${formatPace(sec - 75)}/km`
+    } else {
+      // Fix 6: Use fitness-level defaults when no pace set
+      const def = PACE_DEFAULTS_SEC[level] ?? PACE_DEFAULTS_SEC.intermediate
+      if (type === 'easy' || type === 'long' || type === 'base' || type === 'recovery') return `${formatPace(def.easy)}/km`
+      if (type === 'tempo') return `${formatPace(def.tempo)}/km`
+      if (type === 'interval' || type === 'speed') return `${formatPace(def.interval)}/km`
+    }
   }
   if (disc === 'ride') {
     const speed = Number(prefs.ride_speed_kmh)
@@ -197,8 +219,11 @@ function buildDescription(disc: string, type: string, km: number, targetPace: st
     }
     return `${km}km${pace} — steady aerobic effort, stay in zone`
   }
-  if (disc === 'brick') {
-    return `${Math.round(km * 0.8)}km ride then straight into a ${Math.round(km * 0.2 * 5)}min run — practice T2 transition`
+  if (disc === 'ride' && type === 'brick') {
+    return `${km}km ride${pace} — keep effort controlled, save legs for the run off the bike`
+  }
+  if (disc === 'run' && type === 'brick') {
+    return `${km}km run immediately off the bike — no break. Legs will feel strange for 2-3 min; that's exactly what race day feels like`
   }
   return `${km > 0 ? km + 'km ' : ''}${type}`
 }
@@ -585,7 +610,7 @@ function nearestAllowedDay(day: number, allowed: number[]): number {
   }, allowed[0])
 }
 
-// Find allowed day closest FORWARD from anchor (for placing long ride after long run day)
+// Find allowed day closest FORWARD from anchor
 function findAdjacentDay(anchor: number, allowed: number[]): number {
   const others = (allowed.length > 0 ? allowed : [0,1,2,3,4,5,6]).filter(d => d !== anchor)
   if (!others.length) return (anchor + 1) % 7
@@ -594,6 +619,23 @@ function findAdjacentDay(anchor: number, allowed: number[]): number {
     const fwdBest = (best - anchor + 7) % 7
     return fwdD < fwdBest ? d : best
   }, others[0])
+}
+
+// Fix 5: Find day at least minGap days away from anchor (circular), maximises separation
+function findSeparatedDay(anchor: number, pool: number[], minGap = 2): number {
+  const others = (pool.length > 0 ? pool : [0,1,2,3,4,5,6]).filter(d => d !== anchor)
+  if (!others.length) return (anchor + 1) % 7
+  const candidates = others.filter(d => {
+    const fwd = (d - anchor + 7) % 7
+    const bwd = (anchor - d + 7) % 7
+    return Math.min(fwd, bwd) >= minGap
+  })
+  const search = candidates.length > 0 ? candidates : others
+  return search.reduce((best, d) => {
+    const dD = Math.min((d - anchor + 7) % 7, (anchor - d + 7) % 7)
+    const dB = Math.min((best - anchor + 7) % 7, (anchor - best + 7) % 7)
+    return dD > dB ? d : best
+  }, search[0])
 }
 
 // ── Template-based weekly schedule ───────────────────────────────────────────
@@ -638,9 +680,9 @@ function buildWeekTemplate(
   // Pool: the days we are allowed to use
   const pool = allowedDays.length > 0 ? allowedDays : [0,1,2,3,4,5,6]
 
-  // Long RUN on preferred day; long RIDE on the next adjacent allowed day
+  // Long RUN on preferred day; long RIDE at least 2 days away (fix 5)
   const longRunDay  = nearestAllowedDay(longDayIdx, pool)
-  const longRideDay = findAdjacentDay(longRunDay, pool)
+  const longRideDay = findSeparatedDay(longRunDay, pool, 2)
 
   // ----- Single discipline templates -----
   if (discSet === 'run' || discSet === 'ride' || discSet === 'swim') {
@@ -821,7 +863,7 @@ function buildNotesDrivenTemplate(
   hasQuality: boolean,
 ): Array<{ dayIdx: number; slot: Slot }> {
   const longRunDay  = nearestAllowedDay(longDayIdx, pool)
-  const longRideDay = findAdjacentDay(longRunDay, pool)
+  const longRideDay = findSeparatedDay(longRunDay, pool, 2)
 
   type ToPlace = { disc: 'run' | 'ride' | 'swim'; type: string; preferDay?: number }
   const toPlace: ToPlace[] = []
@@ -1100,6 +1142,19 @@ function buildBaseWeek(ctx: UserContext, peakMultiplier: number, planType: PlanT
     (DAY_INDEX[a.day.toLowerCase()] ?? 0) - (DAY_INDEX[b.day.toLowerCase()] ?? 0),
   )
 
+  // Fix 9: Hard/easy alternation — no two consecutive leg-heavy hard sessions
+  const legHardTypes = new Set(['tempo', 'interval', 'speed', 'long'])
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const a = sorted[i]
+    const b = sorted[i + 1]
+    if (!['run', 'ride'].includes(a.disc) || !['run', 'ride'].includes(b.disc)) continue
+    const aDow = DAY_INDEX[a.day.toLowerCase()] ?? 0
+    const bDow = DAY_INDEX[b.day.toLowerCase()] ?? 0
+    if (Math.abs(aDow - bDow) === 1 && legHardTypes.has(a.type) && legHardTypes.has(b.type)) {
+      sorted[i + 1] = { ...sorted[i + 1], type: 'easy' }
+    }
+  }
+
   // Hard constraint: remove any sessions that landed outside allowed days
   const result = allowedDays.length > 0
     ? sorted.filter(s => allowedDays.includes(DAY_INDEX[s.day.toLowerCase()] ?? -1))
@@ -1123,19 +1178,24 @@ function expandPlan(
   raceDistances:   RaceDistances | null,
   currentWeeklyKm: Record<string, number>,
   totalWeeks:      number,
+  level:           string = 'intermediate',
 ): Array<{ week: number; sessions: AiSession[] }> {
+
+  const round1 = (x: number) => Math.round(x * 10) / 10
 
   // Compute peak long and week-1 long per discipline from race distance
   const peakLong:  Record<string, number> = {}
   const week1Long: Record<string, number> = {}
 
-  const round1 = (x: number) => Math.round(x * 10) / 10
   if (raceDistances) {
     for (const disc of ['run', 'ride', 'swim'] as const) {
       const raceDist = raceDistances[disc]
       if (!raceDist) continue
       const currentLong = round1((currentWeeklyKm[disc] ?? 0) * 0.40)
-      const targetPeak  = round1(raceDist * 0.90)
+      // Fix 7: Swim peaks at 110% race distance (open-water confidence buffer)
+      const targetPeak  = disc === 'swim'
+        ? round1(raceDist * 1.10)
+        : round1(raceDist * 0.90)
       peakLong[disc]  = Math.max(currentLong, targetPeak)
       week1Long[disc] = round1(Math.max(currentLong, peakLong[disc] * 0.45))
     }
@@ -1146,8 +1206,32 @@ function expandPlan(
 
   const discsWithFormula = new Set(Object.keys(peakLong))
 
+  // Fix 8: Brick scheduling setup for triathlon athletes
+  const isTri = (raceDistances?.ride != null) && (raceDistances?.run != null)
+  const longRunDow  = (() => {
+    const s = baseSessions.find(s => s.disc === 'run'  && s.type === 'long')
+    return s ? (DAY_INDEX[s.day.toLowerCase()] ?? -1) : -1
+  })()
+  const longRideDow = (() => {
+    const s = baseSessions.find(s => s.disc === 'ride' && s.type === 'long')
+    return s ? (DAY_INDEX[s.day.toLowerCase()] ?? -1) : -1
+  })()
+  // Brick day: prefer Wed or Thu, avoiding the two long-session days
+  const brickDow = isTri
+    ? ([2, 3, 1, 4, 0].find(d => d !== longRunDow && d !== longRideDow) ?? -1)
+    : -1
+
+  // Interval distance caps (fix 3)
+  const INTERVAL_CAPS: Record<string, number> = { run: 12, ride: 60, swim: 3.5 }
+
   return multipliers.map((mult, i) => {
-    const weekNumber = i + 1
+    const weekNumber    = i + 1
+    const phase         = getWeekPhase(weekNumber, totalWeeks)
+    const buildStart    = Math.floor(totalWeeks * 0.40)
+    const weeksIntoBuild = weekNumber - buildStart
+
+    // Quality counter per discipline — resets each week
+    const qualCount: Record<string, number> = {}
 
     const sessions = baseSessions.map(s => {
       const disc = s.disc
@@ -1161,40 +1245,109 @@ function expandPlan(
         }
       }
 
-      // This week's long session km from race-distance formula
-      const weekLong = calcWeekLongKm(weekNumber, totalWeeks, peakLong[disc], week1Long[disc], raceDistances?.[disc as 'swim'|'ride'|'run'])
+      const weekLong = calcWeekLongKm(
+        weekNumber, totalWeeks, peakLong[disc], week1Long[disc],
+        raceDistances?.[disc as 'swim' | 'ride' | 'run'],
+      )
 
-      // Apply phase-appropriate session type override
-      const phase = getWeekPhase(weekNumber, totalWeeks)
-      const buildStart = Math.floor(totalWeeks * 0.40)
-      const weeksIntoBuild = weekNumber - buildStart
-
+      // Fix 2: Strict phase gating
       let sessionType = s.type
+
       if (phase === 'base') {
-        // Base: easy aerobic only — no tempo or intervals
-        if (sessionType === 'interval' || sessionType === 'tempo' || sessionType === 'speed') {
+        // Base: ONLY easy, long, base, recovery — zero quality
+        if (sessionType === 'tempo' || sessionType === 'interval' || sessionType === 'speed') {
           sessionType = 'easy'
         }
-      } else if (phase === 'build' && weeksIntoBuild < 3) {
-        // Early build: allow tempo but not intervals yet
-        if (sessionType === 'interval' || sessionType === 'speed') {
-          sessionType = 'tempo'
+      } else if (phase === 'build') {
+        if (weeksIntoBuild < 3) {
+          // Early build: tempo only, no intervals
+          if (sessionType === 'interval' || sessionType === 'speed') {
+            sessionType = 'tempo'
+          }
+        } else {
+          // Late build: max 1 interval per discipline per week
+          if (sessionType === 'interval' || sessionType === 'speed') {
+            if ((qualCount[disc] ?? 0) >= 1) {
+              sessionType = 'tempo'
+            } else {
+              qualCount[disc] = (qualCount[disc] ?? 0) + 1
+            }
+          }
+        }
+      } else if (phase === 'peak') {
+        // Peak: all types allowed, max 2 quality per discipline
+        if (sessionType === 'tempo' || sessionType === 'interval' || sessionType === 'speed') {
+          if ((qualCount[disc] ?? 0) >= 2) {
+            sessionType = 'easy'
+          } else {
+            qualCount[disc] = (qualCount[disc] ?? 0) + 1
+          }
+        }
+      } else if (phase === 'taper') {
+        // Taper: max 1 quality per discipline
+        if (sessionType === 'tempo' || sessionType === 'interval' || sessionType === 'speed') {
+          if ((qualCount[disc] ?? 0) >= 1) {
+            sessionType = 'easy'
+          } else {
+            qualCount[disc] = (qualCount[disc] ?? 0) + 1
+          }
         }
       }
+      // race_week: no quality (all easy) — handled by processRaceWeek replacing everything
 
-      // Scale this session relative to long
-      const ratio = SESSION_TYPE_RATIO[sessionType] ?? 0.65
-      const rawKm = sessionType === 'long' ? weekLong : weekLong * ratio
-      const km    = disc === 'swim'
-        ? Math.max(0.5, Math.round(rawKm * 10) / 10)
+      const ratio  = SESSION_TYPE_RATIO[sessionType] ?? 0.65
+      const rawKm  = sessionType === 'long' ? weekLong : weekLong * ratio
+      let km = disc === 'swim'
+        ? Math.max(0.5, round1(rawKm))
         : Math.max(1,   Math.round(rawKm))
 
-      const min = kmToMin(disc, sessionType, km)
+      // Fix 3: Hard cap on interval distances
+      if ((sessionType === 'interval' || sessionType === 'speed') && INTERVAL_CAPS[disc] !== undefined) {
+        km = disc === 'swim'
+          ? Math.min(km, INTERVAL_CAPS[disc])
+          : Math.min(km, INTERVAL_CAPS[disc])
+      }
 
+      const min = kmToMin(disc, sessionType, km, level)
       return { ...s, type: sessionType, km, min }
     })
 
-    return { week: weekNumber, sessions }
+    // Fix 8: Inject brick sessions for triathlon athletes in build/peak/taper
+    const brickSessions: AiSession[] = []
+    if (isTri && brickDow >= 0 && raceDistances?.ride && raceDistances?.run
+        && (phase === 'build' || phase === 'peak' || phase === 'taper')) {
+      let rideKm = 0, runKm = 0
+
+      if (phase === 'build') {
+        if (weeksIntoBuild < 3) {
+          rideKm = Math.round(raceDistances.ride * 0.35)
+          runKm  = Math.round(raceDistances.run  * 0.25)
+        } else {
+          rideKm = Math.round(raceDistances.ride * 0.55)
+          runKm  = Math.round(raceDistances.run  * 0.40)
+        }
+      } else if (phase === 'peak') {
+        rideKm = Math.round(raceDistances.ride * 0.70)
+        runKm  = Math.round(raceDistances.run  * 0.55)
+      } else if (phase === 'taper') {
+        rideKm = Math.round(raceDistances.ride * 0.35)
+        runKm  = Math.round(raceDistances.run  * 0.20)
+      }
+
+      if (rideKm > 0 && runKm > 0) {
+        const brickDay = ALL_DAYS[brickDow]
+        brickSessions.push({
+          day: brickDay, disc: 'ride', type: 'brick',
+          km: rideKm, min: Math.round(rideKm * 2.2),
+        })
+        brickSessions.push({
+          day: brickDay, disc: 'run', type: 'brick',
+          km: runKm, min: kmToMin('run', 'easy', runKm, level),
+        })
+      }
+    }
+
+    return { week: weekNumber, sessions: [...sessions, ...brickSessions] }
   })
 }
 
@@ -1224,7 +1377,16 @@ function sessionsToRows(
         const minRounded = Math.round(Number(s.min) || 30)
         const description = buildDescription(disc, typeKey, kmRounded, targetPace)
         const structure   = buildStructure(disc, typeKey, kmRounded, targetPace)
-        const rationale   = RATIONALE[disc]?.[typeKey] ?? `${label} session — builds specific fitness for your goal.`
+        const isBrickRide = typeKey === 'brick' && disc === 'ride'
+        const isBrickRun  = typeKey === 'brick' && disc === 'run'
+        const rationale   = isBrickRide
+          ? 'First half of brick session. Ride at race effort — controlled, not maximal. Keep your transition fast.'
+          : isBrickRun
+          ? "Your legs will feel strange for the first 2-3 minutes — this is normal and improves with practice. This is exactly what race day feels like."
+          : (RATIONALE[disc]?.[typeKey] ?? `${label} session — builds specific fitness for your goal.`)
+        const titleStr = isBrickRide ? 'Brick Ride 🧱'
+          : isBrickRun  ? 'Brick Run 🧱'
+          : `${label} ${discCap}`
         return {
           plan_id:            planId,
           user_id:            userId,
@@ -1233,7 +1395,7 @@ function sessionsToRows(
           scheduled_date:     format(addDays(startDate, (week - 1) * 7 + dow), 'yyyy-MM-dd'),
           discipline:         disc,
           session_type:       typeKey,
-          title:              `${label} ${discCap}`,
+          title:              titleStr,
           description,
           session_structure:  structure,
           coaching_rationale: rationale,
@@ -1248,43 +1410,104 @@ function sessionsToRows(
   )
 }
 
-// ── Race week post-processing ─────────────────────────────────────────────────
+// ── Race week post-processing (Fix 1) ─────────────────────────────────────────
 //
-// The final week of a race plan is partial (race day is rarely Sunday).
-// Strip sessions on/after race day, make pre-race sessions easy shakeouts,
-// and insert a RACE DAY marker on the actual race date.
+// Replace entire final week with hardcoded, genuinely easy sessions.
+// Max 3 sessions before race day, all Zone 1, no bricks.
 
 function processRaceWeek(
-  rows:       ReturnType<typeof sessionsToRows>,
-  finalWeek:  number,
-  raceDayDow: number,   // 0=Mon … 6=Sun (our schema convention)
-  planId:     string,
-  userId:     string,
-  raceDate:   Date,
-  eventType:  string,
+  rows:        ReturnType<typeof sessionsToRows>,
+  finalWeek:   number,
+  raceDayDow:  number,     // 0=Mon … 6=Sun
+  planId:      string,
+  userId:      string,
+  raceDate:    Date,
+  eventType:   string,
+  disciplines: string[],
 ): ReturnType<typeof sessionsToRows> {
   const nonFinal = rows.filter(r => r.week_number !== finalWeek)
 
-  // Sessions before race day → easy shakeouts at ~50% volume
-  const preRace = rows
-    .filter(r => r.week_number === finalWeek && r.day_of_week < raceDayDow)
-    .map(r => {
-      const shortMin = Math.max(20, Math.round((r.duration_minutes ?? 30) * 0.5))
-      const shortKm  = Math.max(3,  Math.round(((r.distance_km  ?? 5)  * 0.5) * 2) / 2)
-      return {
-        ...r,
-        session_type:       'recovery',
-        title:              r.title.replace(/Interval|Tempo|Speed|Long/g, 'Easy'),
-        description:        `${shortMin}min easy shakeout — stay loose, conserve energy. Conversation pace only.`,
-        session_structure:  [{ description: `${shortMin}min easy at Zone 1. Stop if you feel flat.` }],
-        coaching_rationale: 'Race week: movement without fatigue. Zone 1 throughout — protect your legs for race day.',
-        effort_zone:        'Zone 1',
-        duration_minutes:   shortMin,
-        distance_km:        shortKm,
-      }
-    })
+  const hasSwim = disciplines.includes('swim')
+  const hasRide = disciplines.includes('ride')
+  const hasRun  = disciplines.includes('run')
 
-  // Race day marker session
+  function makeRow(
+    dow: number,
+    disc: string,
+    stype: string,
+    title: string,
+    desc: string,
+    km: number,
+    min: number,
+  ) {
+    return {
+      plan_id:            planId,
+      user_id:            userId,
+      week_number:        finalWeek,
+      day_of_week:        dow,
+      scheduled_date:     format(addDays(raceDate, dow - raceDayDow), 'yyyy-MM-dd'),
+      discipline:         disc,
+      session_type:       stype,
+      title,
+      description:        desc,
+      session_structure:  [{ description: desc }],
+      coaching_rationale: 'Race week: movement without fatigue. Zone 1 only — protect your legs for race day.',
+      effort_zone:        'Zone 1',
+      target_pace:        null,
+      duration_minutes:   min,
+      distance_km:        km,
+      status:             'planned' as const,
+    }
+  }
+
+  // Hardcoded race-week sessions based on race day
+  // raceDayDow 6 = Sunday, 5 = Saturday
+  const preRaceRows: ReturnType<typeof makeRow>[] = []
+
+  if (raceDayDow === 6) {
+    // Sunday race
+    // Mon: easy swim 800m or easy run 20min
+    if (hasSwim) {
+      preRaceRows.push(makeRow(0, 'swim', 'easy', 'Easy Swim', '800m easy swim — long slow strokes, focus on feel', 0.8, 25))
+    } else if (hasRun) {
+      preRaceRows.push(makeRow(0, 'run', 'easy', 'Easy Run', '3km easy jog — conversational pace, just shake out the legs', 3, 20))
+    }
+    // Tue: easy ride 20km
+    if (hasRide) {
+      preRaceRows.push(makeRow(1, 'ride', 'easy', 'Easy Ride', '20km easy spin — keep it Zone 1, just keep the legs moving', 20, 45))
+    }
+    // Wed: easy run 3km + strides
+    if (hasRun) {
+      preRaceRows.push(makeRow(2, 'run', 'easy', 'Easy Run + Strides', '3km easy run with 4×20s strides at race pace — keep legs feeling sharp', 3, 20))
+    }
+    // Thu, Fri, Sat: rest (no rows = rest days)
+  } else if (raceDayDow === 5) {
+    // Saturday race
+    // Mon: easy swim 800m
+    if (hasSwim) {
+      preRaceRows.push(makeRow(0, 'swim', 'easy', 'Easy Swim', '800m easy swim — relax, focus on stroke efficiency', 0.8, 25))
+    } else if (hasRun) {
+      preRaceRows.push(makeRow(0, 'run', 'easy', 'Easy Run', '3km easy jog — shake out the legs, nothing more', 3, 20))
+    }
+    // Tue: easy ride 20km
+    if (hasRide) {
+      preRaceRows.push(makeRow(1, 'ride', 'easy', 'Easy Ride', '20km easy spin — Zone 1 only, keep it relaxed', 20, 45))
+    }
+    // Wed: easy run 3km + strides
+    if (hasRun) {
+      preRaceRows.push(makeRow(2, 'run', 'easy', 'Easy Run + Strides', '3km easy with 4×20s race-pace strides — stay sharp', 3, 20))
+    }
+    // Thu, Fri: rest
+  } else {
+    // Midweek race — just 1-2 easy sessions Mon-Tue before race
+    if (hasRun && raceDayDow > 1) {
+      preRaceRows.push(makeRow(0, 'run', 'easy', 'Easy Run', '20min easy jog — loosen the legs, nothing stressful', 3, 20))
+    }
+    if (hasRide && raceDayDow > 2) {
+      preRaceRows.push(makeRow(1, 'ride', 'easy', 'Easy Ride', '20km easy spin — keep it Zone 1', 20, 45))
+    }
+  }
+
   const raceDayRow = {
     plan_id:            planId,
     user_id:            userId,
@@ -1304,7 +1527,7 @@ function processRaceWeek(
     status:             'planned' as const,
   }
 
-  return [...nonFinal, ...preRace, raceDayRow]
+  return [...nonFinal, ...preRaceRows, raceDayRow]
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────
@@ -1357,8 +1580,9 @@ export async function generatePlanSkeleton(
   console.log('[PLAN] RACE DISTANCES:', raceDistances)
   console.log('[PLAN] CURRENT WEEKLY KM:', currentWeeklyKm)
 
+  const level = (context.user.preferences.fitness_level as string) ?? 'intermediate'
   const baseSessions = buildBaseWeek(context, peakMultiplier, timing.planType)
-  const allWeeks     = expandPlan(baseSessions, multipliers, raceDistances, currentWeeklyKm, timing.planWeeks)
+  const allWeeks     = expandPlan(baseSessions, multipliers, raceDistances, currentWeeklyKm, timing.planWeeks, level)
   const startDate    = timing.startDate
 
   console.log('[PLAN] DB insert:', Date.now())
@@ -1402,7 +1626,7 @@ export async function generatePlanSkeleton(
     const jsRaceDay  = raceDate.getDay()                  // 0=Sun … 6=Sat
     const raceDayDow = (jsRaceDay + 6) % 7               // 0=Mon … 6=Sun
     const eventType  = context.goal?.event_type ?? ''
-    rows = processRaceWeek(rows, timing.planWeeks, raceDayDow, plan.id, userId, raceDate, eventType)
+    rows = processRaceWeek(rows, timing.planWeeks, raceDayDow, plan.id, userId, raceDate, eventType, context.user.disciplines ?? [])
     console.log(`[PLAN] Race week processed: raceDayDow=${raceDayDow} (${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][raceDayDow]})`)
   }
 
