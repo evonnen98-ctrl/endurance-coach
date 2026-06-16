@@ -1,9 +1,11 @@
+import 'dotenv/config'
 import { createClient } from '@supabase/supabase-js'
 
-const sb = createClient(
-  'https://wuidlwwgafgomhztqodo.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1aWRsd3dnYWZnb21oenRxb2RvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTI0NjQwOCwiZXhwIjoyMDk2ODIyNDA4fQ.o7mavlfJrIzvhbVJqgRFa25cXslYAef7t_UJ18Ph0HU'
-)
+const url = process.env.VITE_SUPABASE_URL
+const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+if (!url || !key) throw new Error('Missing VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env')
+
+const sb = createClient(url, key)
 const DEMO_USER = '00000000-0000-0000-0000-000000000001'
 
 async function main() {

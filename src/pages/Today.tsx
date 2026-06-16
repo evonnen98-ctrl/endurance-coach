@@ -89,7 +89,7 @@ export default function TodayPage() {
   const planNotStarted  = planStartDate ? planStartDate > TODAY_STR : false
 
   const planCurrentWeek = planStartDate && !planNotStarted && activePlanWeeks
-    ? Math.min(activePlanWeeks, Math.max(1, Math.ceil(differenceInDays(TODAY, parseISO(planStartDate)) / 7) + 1))
+    ? Math.min(activePlanWeeks, Math.max(1, Math.floor(differenceInDays(TODAY, parseISO(planStartDate)) / 7) + 1))
     : null
 
   const planProgressPct = planCurrentWeek && activePlanWeeks

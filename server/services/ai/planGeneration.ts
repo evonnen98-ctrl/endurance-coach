@@ -675,14 +675,17 @@ function buildWeekTemplate(
   level: FitnessLevel,
   hasQuality: boolean,
   allowedDays: number[] = [], // empty = no restriction
+  longRideDayOverride?: number,
 ): Array<{ dayIdx: number; slot: Slot }> {
 
   // Pool: the days we are allowed to use
   const pool = allowedDays.length > 0 ? allowedDays : [0,1,2,3,4,5,6]
 
-  // Long RUN on preferred day; long RIDE at least 2 days away (fix 5)
+  // Long RUN on preferred day; long RIDE from coach notes or at least 2 days away (fix 5)
   const longRunDay  = nearestAllowedDay(longDayIdx, pool)
-  const longRideDay = findSeparatedDay(longRunDay, pool, 2)
+  const longRideDay = longRideDayOverride !== undefined
+    ? nearestAllowedDay(longRideDayOverride, pool)
+    : findSeparatedDay(longRunDay, pool, 2)
 
   // ----- Single discipline templates -----
   if (discSet === 'run' || discSet === 'ride' || discSet === 'swim') {
@@ -784,14 +787,23 @@ function buildWeekTemplate(
     }
   }
 
-  // Remove duplicate disciplines on same day (keep first occurrence — should not happen with templates but be safe)
-  const seen = new Map<string, boolean>()
-  const deduped = entries.filter(e => {
+  // Dedup: same discipline on same day — move to an available pool day or drop
+  const seenKey = new Map<string, true>()
+  const deduped: typeof entries = []
+  for (const e of entries) {
     const key = `${e.dayIdx}-${e.disc}`
-    if (seen.has(key)) return false
-    seen.set(key, true)
-    return true
-  })
+    if (!seenKey.has(key)) {
+      seenKey.set(key, true)
+      deduped.push(e)
+    } else {
+      const usedByDisc = new Set(deduped.filter(x => x.disc === e.disc).map(x => x.dayIdx))
+      const alt = pool.find(d => !usedByDisc.has(d) && !seenKey.has(`${d}-${e.disc}`))
+      if (alt !== undefined) {
+        seenKey.set(`${alt}-${e.disc}`, true)
+        deduped.push({ ...e, dayIdx: alt })
+      }
+    }
+  }
 
   // Assign km shares per discipline
   const runEntries  = deduped.filter(e => e.disc === 'run')
@@ -861,9 +873,12 @@ function buildNotesDrivenTemplate(
   longDayIdx: number,
   pool:       number[],
   hasQuality: boolean,
+  longRideDayOverride?: number,
 ): Array<{ dayIdx: number; slot: Slot }> {
   const longRunDay  = nearestAllowedDay(longDayIdx, pool)
-  const longRideDay = findSeparatedDay(longRunDay, pool, 2)
+  const longRideDay = longRideDayOverride !== undefined
+    ? nearestAllowedDay(longRideDayOverride, pool)
+    : findSeparatedDay(longRunDay, pool, 2)
 
   type ToPlace = { disc: 'run' | 'ride' | 'swim'; type: string; preferDay?: number }
   const toPlace: ToPlace[] = []
@@ -936,13 +951,14 @@ function buildNotesDrivenTemplate(
 // ── Coach notes constraint parser ─────────────────────────────────────────────
 
 interface CoachNoteConstraints {
-  weekdayMaxMin?:    number
-  longRunDayOverride?: number
-  avoidHighImpactRun?: boolean
-  totalSessions?:    number
-  runSessions?:      number
-  rideSessions?:     number
-  swimSessions?:     number
+  weekdayMaxMin?:       number
+  longRunDayOverride?:  number
+  longRideDayOverride?: number
+  avoidHighImpactRun?:  boolean
+  totalSessions?:       number
+  runSessions?:         number
+  rideSessions?:        number
+  swimSessions?:        number
 }
 
 function parseCoachNotes(notes: string): CoachNoteConstraints {
@@ -961,6 +977,13 @@ function parseCoachNotes(notes: string): CoachNoteConstraints {
   if (longRunMatch) {
     const key = longRunMatch[1].replace(/s$/, '')
     if (DAY_INDEX[key] !== undefined) result.longRunDayOverride = DAY_INDEX[key]
+  }
+
+  // Long ride day override: "long ride/bike/cycle on Sunday"
+  const longRideMatch = lower.match(/long\s+(?:rides?|bikes?|cycles?)\s+on\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)s?/)
+  if (longRideMatch) {
+    const key = longRideMatch[1].replace(/s$/, '')
+    if (DAY_INDEX[key] !== undefined) result.longRideDayOverride = DAY_INDEX[key]
   }
 
   // Injury flags
@@ -1017,7 +1040,7 @@ function buildBaseWeek(ctx: UserContext, peakMultiplier: number, planType: PlanT
   const allowedDays = parseTrainingDays(preferences.training_days as string ?? '')
   let longDayIdx    = allowedDays.length > 0 ? nearestAllowedDay(rawLongIdx, allowedDays) : rawLongIdx
 
-  // Coach notes take priority: override long run day if athlete specified one
+  // Coach notes take priority: override long run/ride day if athlete specified one
   const noteConstraints = parseCoachNotes(ctx.user.coach_notes_freetext ?? '')
   if (noteConstraints.longRunDayOverride !== undefined) {
     const override = noteConstraints.longRunDayOverride
@@ -1025,6 +1048,13 @@ function buildBaseWeek(ctx: UserContext, peakMultiplier: number, planType: PlanT
       longDayIdx = override
       console.log('[PLAN] NOTES: long run day overridden to', ALL_DAYS[override])
     }
+  }
+  const longRideDayOverride = noteConstraints.longRideDayOverride !== undefined
+    && (allowedDays.length === 0 || allowedDays.includes(noteConstraints.longRideDayOverride))
+    ? noteConstraints.longRideDayOverride
+    : undefined
+  if (longRideDayOverride !== undefined) {
+    console.log('[PLAN] NOTES: long ride day overridden to', ALL_DAYS[longRideDayOverride])
   }
 
   const isReturn    = training_phase === 'return'
@@ -1081,9 +1111,9 @@ function buildBaseWeek(ctx: UserContext, peakMultiplier: number, planType: PlanT
     const rideCount = hasRide ? (noteConstraints.rideSessions ?? defaultPer) : 0
     const swimCount = hasSwim ? (noteConstraints.swimSessions ?? defaultPer) : 0
     console.log('[PLAN] NOTES: per-disc counts → run:', runCount, 'ride:', rideCount, 'swim:', swimCount)
-    template = buildNotesDrivenTemplate(runCount, rideCount, swimCount, longDayIdx, pool, hasQuality)
+    template = buildNotesDrivenTemplate(runCount, rideCount, swimCount, longDayIdx, pool, hasQuality, longRideDayOverride)
   } else {
-    template = buildWeekTemplate(daysPerWeek, discSet, longDayIdx, level, hasQuality, allowedDays)
+    template = buildWeekTemplate(daysPerWeek, discSet, longDayIdx, level, hasQuality, allowedDays, longRideDayOverride)
   }
   console.log('[PLAN] ALLOWED_DAYS:      ', allowedDays.length > 0 ? allowedDays.map(d => ALL_DAYS[d]) : 'all')
   console.log('[PLAN] LONG_RUN_DAY:      ', ALL_DAYS[longDayIdx])
@@ -1216,9 +1246,12 @@ function expandPlan(
     const s = baseSessions.find(s => s.disc === 'ride' && s.type === 'long')
     return s ? (DAY_INDEX[s.day.toLowerCase()] ?? -1) : -1
   })()
-  // Brick day: prefer Wed or Thu, avoiding the two long-session days
+  // Brick day: prefer Wed or Thu, avoiding long-session days and days with existing run/ride
   const brickDow = isTri
-    ? ([2, 3, 1, 4, 0].find(d => d !== longRunDow && d !== longRideDow) ?? -1)
+    ? ([2, 3, 1, 4, 0].find(d => {
+        if (d === longRunDow || d === longRideDow) return false
+        return !baseSessions.some(s => DAY_INDEX[s.day.toLowerCase()] === d && (s.disc === 'run' || s.disc === 'ride'))
+      }) ?? -1)
     : -1
 
   // Interval distance caps (fix 3)
@@ -1380,9 +1413,9 @@ function sessionsToRows(
         const isBrickRide = typeKey === 'brick' && disc === 'ride'
         const isBrickRun  = typeKey === 'brick' && disc === 'run'
         const rationale   = isBrickRide
-          ? 'First half of brick session. Ride at race effort — controlled, not maximal. Keep your transition fast.'
+          ? 'Complete immediately before the brick run. No rest between disciplines — rack your bike and head straight out on the run. Builds the bike-to-run transition that defines triathlon racing.'
           : isBrickRun
-          ? "Your legs will feel strange for the first 2-3 minutes — this is normal and improves with practice. This is exactly what race day feels like."
+          ? 'Start immediately after the brick ride. This simulates race day T2 transition. Your legs will feel strange for the first 2–3 minutes — that is normal and improves with practice.'
           : (RATIONALE[disc]?.[typeKey] ?? `${label} session — builds specific fitness for your goal.`)
         const titleStr = isBrickRide ? 'Brick Ride 🧱'
           : isBrickRun  ? 'Brick Run 🧱'
