@@ -1570,7 +1570,8 @@ export async function generatePlanSkeleton(
   context: UserContext,
   onProgress?: (msg: string) => void,
 ): Promise<void> {
-  console.log('[PLAN] USER CONTEXT FOR PLAN:', JSON.stringify({
+  console.log('=== PLAN GENERATION START ===')
+  console.log('User context:', JSON.stringify({
     name:           context.user.name,
     disciplines:    context.user.disciplines,
     training_phase: context.user.training_phase,
@@ -1578,18 +1579,30 @@ export async function generatePlanSkeleton(
     goal:           context.goal,
   }, null, 2))
   console.log('[PLAN] Start:', Date.now())
+  console.log('=== PLAN GENERATION START — context logged above ===')
 
-  const { data: existing } = await supabase
+  // Delete any surviving active plans before generating fresh.
+  // Server owns this cleanup because the client-side delete can fail silently
+  // if workout_logs/checkins FK references block it.
+  const { data: existingPlans } = await supabase
     .from('training_plans')
     .select('id')
     .eq('user_id', userId)
     .eq('status', 'active')
-    .limit(1)
-    .maybeSingle()
 
-  if (existing) {
-    console.log('[PLAN] Active plan exists — skipping')
-    return
+  if (existingPlans?.length) {
+    console.log('[PLAN] Clearing', existingPlans.length, 'existing plan(s) before regeneration')
+    const oldIds = existingPlans.map(p => p.id)
+    const { data: oldSessions } = await supabase.from('sessions').select('id').in('plan_id', oldIds)
+    if (oldSessions?.length) {
+      const sIds = oldSessions.map(s => s.id)
+      await supabase.from('workout_logs').delete().in('session_id', sIds)
+      await supabase.from('checkins').delete().in('session_id', sIds)
+    }
+    await supabase.from('coach_notes').delete().in('plan_id', oldIds)
+    await supabase.from('sessions').delete().in('plan_id', oldIds)
+    await supabase.from('training_plans').delete().in('id', oldIds)
+    console.log('[PLAN] Old plan cleared')
   }
 
   onProgress?.('Building your plan…')
@@ -1599,6 +1612,7 @@ export async function generatePlanSkeleton(
   const preferredStart = context.user.preferences.plan_start_date as string | undefined
 
   const timing = calculatePlanTiming(targetDate, preferredStart, context.user.training_phase as string)
+  console.log('Plan timing:', timing)
   const { multipliers, peakMultiplier } = buildPlanMultipliers(timing.planWeeks, timing.planType, goalType, timing.phases)
 
   const currentWeeklyKm = {
@@ -1615,7 +1629,9 @@ export async function generatePlanSkeleton(
 
   const level = (context.user.preferences.fitness_level as string) ?? 'intermediate'
   const baseSessions = buildBaseWeek(context, peakMultiplier, timing.planType)
+  console.log('Base sessions:', baseSessions.length)
   const allWeeks     = expandPlan(baseSessions, multipliers, raceDistances, currentWeeklyKm, timing.planWeeks, level)
+  console.log('Total weeks generated:', allWeeks.length)
   const startDate    = timing.startDate
 
   console.log('[PLAN] DB insert:', Date.now())
@@ -1638,6 +1654,7 @@ export async function generatePlanSkeleton(
     ? format(raceDate, 'yyyy-MM-dd')
     : format(addDays(startDate, timing.planWeeks * 7 - 1), 'yyyy-MM-dd')
 
+  console.log('Inserting plan...')
   const { data: plan, error: planError } = await supabase
     .from('training_plans')
     .insert({
@@ -1650,6 +1667,7 @@ export async function generatePlanSkeleton(
     .select()
     .single()
 
+  console.log('Plan insert result:', { plan: plan ? { id: plan.id } : null, planError })
   if (planError) throw new Error(`Failed to create training plan: ${planError.message}`)
 
   let rows = sessionsToRows(plan.id, userId, allWeeks, startDate, context.user.preferences)
@@ -1663,12 +1681,14 @@ export async function generatePlanSkeleton(
     console.log(`[PLAN] Race week processed: raceDayDow=${raceDayDow} (${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][raceDayDow]})`)
   }
 
+  console.log('Inserting sessions:', rows.length)
   if (rows.length > 0) {
-    await supabase.from('sessions').insert(rows)
+    const { error: sessionsError } = await supabase.from('sessions').insert(rows)
+    console.log('Sessions insert result:', { error: sessionsError })
   }
 
   console.log('[PLAN] Done:', Date.now())
-  console.log(`[PLAN] Inserted ${rows.length} sessions across ${timing.planWeeks} weeks (phase: ${timing.phase})`)
+  console.log(`[PLAN] Inserted ${rows.length} sessions across ${timing.planWeeks} weeks (planType: ${timing.planType})`)
 }
 
 export async function generatePlan(userId: string, context: UserContext): Promise<void> {

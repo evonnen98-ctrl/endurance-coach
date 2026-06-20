@@ -10,6 +10,25 @@ interface Props {
   onRejected: () => void
 }
 
+const archivoCaps: React.CSSProperties = {
+  fontFamily: '"Archivo", sans-serif',
+  fontStretch: '125%',
+  fontWeight: 700,
+  fontSize: 8,
+  letterSpacing: '0.12em',
+  textTransform: 'uppercase',
+}
+
+const pillBtn: React.CSSProperties = {
+  fontFamily: '"Archivo", sans-serif',
+  fontStretch: '125%',
+  fontWeight: 800,
+  fontSize: 11,
+  letterSpacing: '0.1em',
+  textTransform: 'uppercase',
+  borderRadius: 999,
+}
+
 export default function ProposedChangesCard({ changes, onAccepted, onRejected }: Props) {
   const queryClient = useQueryClient()
   const [applying, setApplying] = useState(false)
@@ -28,54 +47,51 @@ export default function ProposedChangesCard({ changes, onAccepted, onRejected }:
   }
 
   return (
-    <div className="mx-6 mt-2 bg-amber-50 border border-amber-200 rounded-2xl overflow-hidden">
-      {/* Header */}
-      <div className="px-4 pt-3 pb-2 border-b border-amber-100">
-        <p className="text-[13px] font-semibold text-amber-800">Proposed plan changes</p>
+    <div className="mx-4 mt-2 rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--mist)', border: '1px solid var(--graphite-300)' }}>
+      <div className="px-4 pt-3 pb-2" style={{ borderBottom: '1px solid var(--graphite-300)' }}>
+        <p style={{ ...archivoCaps, color: 'var(--graphite-500)' }}>Proposed plan changes</p>
       </div>
 
-      {/* Changes list */}
       <div className="px-4 py-3 space-y-3">
         {changes.map((c, i) => (
           <div key={i}>
-            <p className="text-xs font-medium text-amber-600 uppercase tracking-wider mb-1">{c.date}</p>
+            <p style={{ ...archivoCaps, color: 'var(--graphite-300)', marginBottom: 4 }}>{c.date}</p>
             <div className="flex items-start gap-2">
-              {/* Before */}
-              <div className="flex-1 bg-white/60 rounded-lg px-3 py-2">
-                <p className="text-[13px] text-gray-400 line-through">{c.originalTitle}</p>
+              <div className="flex-1 rounded-lg px-3 py-2" style={{ backgroundColor: '#FFFFFF', border: '1px solid var(--graphite-300)' }}>
+                <p className="text-[13px] font-medium line-through" style={{ color: 'var(--graphite-300)' }}>{c.originalTitle}</p>
                 {c.originalDuration > 0 && (
-                  <p className="text-xs text-gray-400">{c.originalDuration}min</p>
+                  <p className="text-xs font-medium" style={{ color: 'var(--graphite-300)' }}>{c.originalDuration}min</p>
                 )}
               </div>
-              <span className="text-amber-400 mt-2 flex-shrink-0">→</span>
-              {/* After */}
-              <div className="flex-1 bg-white rounded-lg px-3 py-2 border border-amber-200">
-                <p className="text-[13px] text-gray-800 font-medium">{c.newTitle}</p>
+              <span className="font-medium mt-2 flex-shrink-0" style={{ color: 'var(--graphite-300)', fontSize: 14 }}>→</span>
+              <div className="flex-1 rounded-lg px-3 py-2" style={{ backgroundColor: '#FFFFFF', border: '1px solid var(--ink)' }}>
+                <p className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>{c.newTitle}</p>
                 {c.newDuration > 0 && (
-                  <p className="text-xs text-gray-500">{c.newDuration}min</p>
+                  <p className="text-xs font-medium" style={{ color: 'var(--graphite-500)' }}>{c.newDuration}min</p>
                 )}
               </div>
             </div>
             {c.reason && (
-              <p className="text-[12px] text-amber-700 mt-1 leading-relaxed">{c.reason}</p>
+              <p className="text-[12px] font-medium mt-1 leading-relaxed" style={{ color: 'var(--graphite-500)' }}>{c.reason}</p>
             )}
           </div>
         ))}
       </div>
 
-      {/* Actions */}
       <div className="flex gap-2 px-4 pb-4">
         <button
           onClick={handleAccept}
           disabled={applying}
-          className="flex-1 py-2.5 bg-amber-800 text-white text-sm font-semibold rounded-xl disabled:opacity-60"
+          className="flex-1 py-2.5 disabled:opacity-60"
+          style={{ ...pillBtn, backgroundColor: 'var(--ink)', color: '#FFFFFF' }}
         >
-          {applying ? 'Updating…' : 'Accept changes'}
+          {applying ? 'Updating…' : 'Accept'}
         </button>
         <button
           onClick={onRejected}
           disabled={applying}
-          className="flex-1 py-2.5 border border-amber-300 text-amber-800 text-sm font-semibold rounded-xl"
+          className="flex-1 py-2.5"
+          style={{ ...pillBtn, backgroundColor: 'transparent', color: 'var(--ink)', border: '1.5px solid var(--ink)' }}
         >
           Keep original
         </button>

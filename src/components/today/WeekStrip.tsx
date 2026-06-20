@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { startOfWeek, addDays, isSameDay } from 'date-fns'
+import { Check } from 'lucide-react'
 import type { Session } from '../../types'
-import { disciplineColor } from '../../lib/discipline'
 
 interface Props {
   sessions: Session[]
@@ -24,58 +24,56 @@ export default function WeekStrip({ sessions, today }: Props) {
   })
 
   return (
-    <div
-      className="rounded-lg px-4 py-3"
-      style={{ backgroundColor: '#F3F4F6' }}
-    >
-      {/* Full plan link */}
-      <div className="flex justify-end mb-2">
+    <div className="rounded-lg px-4 py-3" style={{ backgroundColor: 'var(--mist)', borderRadius: 10 }}>
+      <div className="flex justify-end mb-2.5">
         <button
           onClick={() => navigate('/plan')}
-          className="text-[11px] text-gray-400 font-medium"
+          style={{
+            fontFamily: '"Archivo", sans-serif',
+            fontStretch: '125%',
+            fontWeight: 700,
+            fontSize: 9,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: 'var(--graphite-500)',
+          }}
         >
           Full plan &rsaquo;
         </button>
       </div>
 
-      {/* Day columns — label above dot */}
       <div className="flex">
         {days.map(({ label, sessions: s, isToday, isPast, allComplete }, i) => {
-          const hasSessions  = s.length > 0
-          const primaryColor = hasSessions
-            ? (disciplineColor[s[0].discipline] ?? '#6B7280')
-            : '#D1D5DB'
-
-          const dotColor = allComplete
-            ? '#22C55E'
-            : hasSessions
-            ? primaryColor
-            : '#D1D5DB'
-
+          const hasSessions = s.length > 0
+          const dotColor = allComplete ? 'var(--ink)' : hasSessions ? 'var(--graphite-300)' : '#E4E5E7'
           const dotOpacity = isPast && !allComplete && hasSessions ? 0.35 : 1
 
           return (
             <div key={i} className="flex-1 flex flex-col items-center gap-1.5">
               {/* Day letter */}
-              <span
-                className="text-[11px] font-semibold"
-                style={{ color: isToday ? '#111827' : '#9CA3AF' }}
-              >
+              <span style={{
+                fontFamily: '"Archivo", sans-serif',
+                fontStretch: '125%',
+                fontWeight: isToday ? 800 : 600,
+                fontSize: 10,
+                letterSpacing: '0.08em',
+                color: isToday ? 'var(--ink)' : 'var(--graphite-300)',
+                textTransform: 'uppercase',
+              }}>
                 {label}
               </span>
 
               {/* Dot(s) */}
               <div className="relative flex items-center justify-center" style={{ width: 24, height: 16 }}>
-                {/* Ring for today */}
                 {isToday && (
                   <span
                     className="absolute rounded-full"
                     style={{
-                      width: 20, height: 20,
+                      width: 22, height: 22,
                       top: '50%', left: '50%',
                       transform: 'translate(-50%, -50%)',
-                      border: `2px solid ${hasSessions ? primaryColor : '#D1D5DB'}`,
-                      opacity: 0.3,
+                      border: '1.5px solid var(--ink)',
+                      opacity: 0.2,
                     }}
                   />
                 )}
@@ -89,7 +87,7 @@ export default function WeekStrip({ sessions, today }: Props) {
                         style={{
                           width:  isToday ? 8 : 6,
                           height: isToday ? 8 : 6,
-                          backgroundColor: allComplete ? '#22C55E' : (disciplineColor[sess.discipline] ?? '#9CA3AF'),
+                          backgroundColor: dotColor,
                           opacity: dotOpacity,
                         }}
                       />
@@ -108,9 +106,9 @@ export default function WeekStrip({ sessions, today }: Props) {
                 )}
               </div>
 
-              {/* Completed tick */}
+              {/* Complete indicator */}
               {allComplete && (
-                <span className="text-[9px] text-green-500 leading-none">✓</span>
+                <Check size={9} style={{ color: 'var(--graphite-500)' }} strokeWidth={2.5} />
               )}
             </div>
           )

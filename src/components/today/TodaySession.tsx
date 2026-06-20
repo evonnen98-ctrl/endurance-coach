@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { Flag } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import type { Session, Checkin } from '../../types'
+import { disciplineLabel } from '../../lib/discipline'
 import WorkoutLogModal from '../modals/WorkoutLogModal'
 
 interface Props {
@@ -10,16 +12,26 @@ interface Props {
   weekSessions?: Session[]
 }
 
-const DISCIPLINE_EMOJI: Record<string, string> = {
-  swim: '🏊', ride: '🚴', run: '🏃', brick: '🏊', rest: '😴',
-}
-
-const DISCIPLINE_COLOR: Record<string, string> = {
-  swim: '#3B82F6', ride: '#F97316', run: '#22C55E',
-  brick: '#F97316', rest: '#9CA3AF',
-}
-
 const KEY_SESSION_TYPES = new Set(['long', 'tempo', 'interval', 'brick', 'speed'])
+
+const discLabelStyle: React.CSSProperties = {
+  fontFamily: '"Archivo", sans-serif',
+  fontStretch: '125%',
+  fontWeight: 700,
+  fontSize: 9,
+  letterSpacing: '0.15em',
+  textTransform: 'uppercase',
+}
+
+const pillBtnStyle: React.CSSProperties = {
+  fontFamily: '"Archivo", sans-serif',
+  fontStretch: '125%',
+  fontWeight: 800,
+  fontSize: 11,
+  letterSpacing: '0.12em',
+  textTransform: 'uppercase',
+  borderRadius: 999,
+}
 
 export default function TodaySession({ session, checkin, weekSessions = [] }: Props) {
   const queryClient = useQueryClient()
@@ -30,9 +42,6 @@ export default function TodaySession({ session, checkin, weekSessions = [] }: Pr
   const isComplete = session.status === 'complete' || justCompleted
   const isRest     = session.discipline === 'rest'
   const isRaceDay  = session.session_type === 'race'
-
-  const accentColor  = DISCIPLINE_COLOR[session.discipline] ?? '#9CA3AF'
-  const emoji        = DISCIPLINE_EMOJI[session.discipline] ?? '🏃'
   const isKeySession = KEY_SESSION_TYPES.has(session.session_type ?? '')
 
   const completedThisWeek = weekSessions.filter(
@@ -70,16 +79,20 @@ export default function TodaySession({ session, checkin, weekSessions = [] }: Pr
   // ── Race day hero ─────────────────────────────────────────────────────────
   if (isRaceDay) {
     return (
-      <div className="bg-gradient-to-br from-black to-gray-900 rounded-lg overflow-hidden shadow-lg">
+      <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--ink)' }}>
         <div className="px-6 pt-6 pb-4 text-center">
-          <p className="text-5xl mb-3">🏁</p>
-          <h2 className="text-[22px] font-bold text-white leading-snug">{session.title}</h2>
+          <Flag size={28} style={{ color: 'var(--volt)', margin: '0 auto 12px' }} />
+          <h2 style={{ fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 800, fontSize: 22, letterSpacing: '-0.01em', lineHeight: 0.95, textTransform: 'uppercase', color: '#FFFFFF' }}>
+            {session.title}
+          </h2>
           {session.description && (
-            <p className="text-[14px] text-gray-300 mt-2 leading-relaxed">{session.description}</p>
+            <p className="text-[14px] mt-2 leading-relaxed font-medium" style={{ color: 'var(--graphite-300)' }}>
+              {session.description}
+            </p>
           )}
         </div>
-        <div className="mx-4 mb-4 bg-white/10 rounded-xl px-4 py-3 text-center">
-          <p className="text-[13px] text-gray-200 leading-relaxed">
+        <div className="mx-4 mb-4 rounded-lg px-4 py-3" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
+          <p className="text-[13px] leading-relaxed font-medium text-center" style={{ color: 'var(--graphite-300)' }}>
             Your training is done. Trust your preparation and race your race.
           </p>
         </div>
@@ -87,80 +100,90 @@ export default function TodaySession({ session, checkin, weekSessions = [] }: Pr
           <button
             onClick={markComplete}
             disabled={completing || isComplete}
-            className="w-full py-4 bg-white text-black font-bold rounded-xl text-[16px] disabled:opacity-60 flex items-center justify-center"
+            className="w-full py-3.5 disabled:opacity-60 flex items-center justify-center"
+            style={{ ...pillBtnStyle, backgroundColor: isComplete ? 'var(--graphite-500)' : '#FFFFFF', color: 'var(--ink)' }}
           >
             {completing
-              ? <span className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
-              : isComplete ? 'Race completed 🎉' : 'Mark race complete'}
+              ? <span className="w-5 h-5 border-2 border-ink border-t-transparent rounded-full animate-spin" />
+              : isComplete ? 'Race complete' : 'Mark race complete'}
           </button>
         </div>
       </div>
     )
   }
 
-  // ── Compact session card ──────────────────────────────────────────────────
+  // ── Regular session card ──────────────────────────────────────────────────
   return (
     <>
-      <div
-        className="bg-white rounded-lg overflow-hidden"
-        style={{ border: '1px solid #F3F4F6', borderLeft: `3px solid ${accentColor}` }}
-      >
-        {/* Card body */}
-        <div className="px-4 py-3">
+      <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid var(--graphite-300)' }}>
+        <div className="px-4 py-3.5">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }} aria-hidden>{emoji}</span>
+            <div className="flex items-start gap-2.5 min-w-0">
+              {/* Discipline label replaces emoji */}
+              <span style={{ ...discLabelStyle, color: isComplete ? 'var(--graphite-300)' : 'var(--graphite-500)', paddingTop: 2, flexShrink: 0 }}>
+                {disciplineLabel[session.discipline] ?? 'REST'}
+              </span>
               <div className="min-w-0">
                 {isKeySession && !isComplete && (
-                  <p className="text-[11px] font-semibold text-amber-500 leading-none mb-0.5">⭐ Key session</p>
+                  <p style={{ ...discLabelStyle, color: 'var(--graphite-300)', fontSize: 8, marginBottom: 2 }}>
+                    Key session
+                  </p>
                 )}
-                <span className={`text-[15px] font-semibold truncate block ${isComplete ? 'text-gray-400' : 'text-gray-900'}`}>
+                <span className={`text-[15px] font-semibold block truncate`} style={{ color: isComplete ? 'var(--graphite-300)' : 'var(--ink)' }}>
                   {session.title}
                 </span>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-              {isComplete && <span className="text-green-500 text-[12px] font-bold">✓</span>}
+              {isComplete && (
+                <span style={{ ...discLabelStyle, color: 'var(--graphite-300)', fontSize: 9 }}>Done</span>
+              )}
               {session.duration_minutes && (
-                <span className="text-[13px] text-gray-400">{session.duration_minutes}min</span>
+                <span className="text-[13px] font-medium" style={{ color: 'var(--graphite-500)' }}>
+                  {session.duration_minutes}min
+                </span>
               )}
             </div>
           </div>
 
           {detailParts.length > 0 && (
-            <p className="text-[13px] text-gray-400 mt-0.5 ml-7">{detailParts.join(' · ')}</p>
+            <p className="text-[12px] font-medium mt-1 ml-[52px]" style={{ color: 'var(--graphite-500)' }}>
+              {detailParts.join(' · ')}
+            </p>
           )}
 
           {coachNote && !isComplete && (
-            <p className="text-[12px] text-gray-400 mt-0.5 ml-7 italic line-clamp-1">{coachNote}</p>
+            <p className="text-[12px] italic mt-0.5 ml-[52px] line-clamp-1 font-medium" style={{ color: 'var(--graphite-300)' }}>
+              {coachNote}
+            </p>
           )}
         </div>
 
-        {/* Mark complete button */}
+        {/* Mark complete */}
         {!isComplete && (
           <button
             onClick={markComplete}
             disabled={completing}
-            className="w-full flex items-center justify-center gap-1.5 text-white text-[12px] font-semibold disabled:opacity-60"
-            style={{ backgroundColor: accentColor, height: 36 }}
+            className="w-full flex items-center justify-center disabled:opacity-60"
+            style={{ ...pillBtnStyle, backgroundColor: 'var(--ink)', color: '#FFFFFF', height: 40, borderRadius: 0 }}
           >
             {completing
               ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              : '✓ Mark complete'}
+              : 'Mark complete'}
           </button>
         )}
 
-        {/* Week celebration */}
+        {/* Week complete */}
         {isComplete && isWeekComplete && (
-          <div className="px-4 pb-2.5 text-center">
-            <p className="text-[12px] text-green-600 font-medium">🎉 Week complete!</p>
+          <div className="px-4 pb-3 pt-1 text-center">
+            <p style={{ ...discLabelStyle, fontSize: 9, color: 'var(--graphite-300)' }}>Week complete</p>
           </div>
         )}
 
-        {/* View log link */}
+        {/* View log */}
         {isComplete && !isWeekComplete && !isRest && (
           <div className="px-4 pb-2.5">
-            <button onClick={() => setShowLog(true)} className="text-[11px] text-gray-300 underline">
+            <button onClick={() => setShowLog(true)} className="text-[11px] font-medium" style={{ color: 'var(--graphite-300)', textDecoration: 'underline' }}>
               View log
             </button>
           </div>

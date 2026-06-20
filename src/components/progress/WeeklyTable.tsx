@@ -45,23 +45,23 @@ export default function WeeklyTable({ sessions }: Props) {
   return (
     <div className="space-y-2">
       {rows.map(row => (
-        <div key={row.weekNum} className="bg-white rounded-xl border border-gray-100 px-4 py-3">
+        <div key={row.weekNum} className="bg-white rounded-xl px-4 py-3" style={{ border: '1px solid var(--graphite-300)' }}>
           <div className="flex items-baseline gap-3 mb-2">
-            <span className="font-semibold text-sm">W{row.weekNum}</span>
-            <span className="text-xs text-gray-400">{row.weekStart}</span>
+            <span className="font-semibold text-sm" style={{ color: 'var(--ink)' }}>W{row.weekNum}</span>
+            <span className="text-xs font-medium" style={{ color: 'var(--graphite-300)' }}>{row.weekStart}</span>
           </div>
           <div className="flex gap-4 text-xs">
             <div>
-              <span className="text-blue-500 font-semibold uppercase tracking-widest text-[10px]">Swim</span>
-              <div className="font-medium text-sm">{row.swim.toFixed(1)} km</div>
+              <span style={{ fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 700, fontSize: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--graphite-300)' } as React.CSSProperties}>Swim</span>
+              <div className="font-semibold text-sm mt-0.5" style={{ color: 'var(--ink)' }}>{row.swim.toFixed(1)} km</div>
             </div>
             <div>
-              <span className="text-orange-500 font-semibold uppercase tracking-widest text-[10px]">Ride</span>
-              <div className="font-medium text-sm">{row.ride.toFixed(0)} km</div>
+              <span style={{ fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 700, fontSize: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--graphite-300)' } as React.CSSProperties}>Ride</span>
+              <div className="font-semibold text-sm mt-0.5" style={{ color: 'var(--ink)' }}>{row.ride.toFixed(0)} km</div>
             </div>
             <div>
-              <span className="text-green-500 font-semibold uppercase tracking-widest text-[10px]">Run</span>
-              <div className="font-medium text-sm">{row.run.toFixed(1)} km</div>
+              <span style={{ fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 700, fontSize: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--graphite-300)' } as React.CSSProperties}>Run</span>
+              <div className="font-semibold text-sm mt-0.5" style={{ color: 'var(--ink)' }}>{row.run.toFixed(1)} km</div>
             </div>
           </div>
         </div>

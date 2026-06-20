@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { format, differenceInDays, parseISO, subDays, addDays } from 'date-fns'
+import { format, differenceInDays, parseISO, subDays } from 'date-fns'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase, DEMO_USER_ID } from '../lib/supabase'
 import type { User, Session, Goal } from '../types'
@@ -13,10 +13,10 @@ const YESTERDAY = format(subDays(TODAY, 1), 'yyyy-MM-dd')
 function getGreeting(name?: string): string {
   const h = TODAY.getHours()
   const n = name ? `, ${name}` : ''
-  if (h >= 22 || h < 5) return `Late night${n} 🌙`
-  if (h < 12)           return `Good morning${n} 👋`
-  if (h < 17)           return `Good afternoon${n} ☀️`
-  return `Good evening${n} 🌙`
+  if (h >= 22 || h < 5) return `Late night${n}`
+  if (h < 12)           return `Good morning${n}`
+  if (h < 17)           return `Good afternoon${n}`
+  return `Good evening${n}`
 }
 
 function calcStreak(dates: string[]): number {
@@ -32,6 +32,16 @@ function calcStreak(dates: string[]): number {
     check = subDays(check, 1)
   }
   return count
+}
+
+const sectionLabel: React.CSSProperties = {
+  fontFamily: '"Archivo", sans-serif',
+  fontStretch: '125%',
+  fontWeight: 700,
+  fontSize: 9,
+  letterSpacing: '0.18em',
+  textTransform: 'uppercase',
+  color: 'var(--graphite-300)',
 }
 
 export default function TodayPage() {
@@ -144,84 +154,82 @@ export default function TodayPage() {
     ? differenceInDays(parseISO(goal.target_date), TODAY)
     : null
 
-  const countdownColor = daysUntilRace === null ? '#3B82F6'
-    : daysUntilRace > 60 ? '#3B82F6'
-    : daysUntilRace > 30 ? '#F59E0B'
-    : '#EF4444'
-
-  const countdownBg = daysUntilRace === null ? 'rgba(59,130,246,0.07)'
-    : daysUntilRace > 60 ? 'rgba(59,130,246,0.07)'
-    : daysUntilRace > 30 ? 'rgba(245,158,11,0.07)'
-    : 'rgba(239,68,68,0.07)'
-
   const hasSessions = todaySessions.length > 0 && !todaySessions.every(s => s.discipline === 'rest')
 
+  const hasHero = goal?.event_type && daysUntilRace !== null
+
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#F9FAFB' }}>
-      {/* Greeting */}
-      <div className="px-5 pt-14">
-        <h1
-          className="animate-fade-in"
-          style={{ fontSize: 22, fontWeight: 500, color: '#1a1a1a', lineHeight: 1.2 }}
-        >
-          {getGreeting(user?.name)}
-        </h1>
-        <div className="flex items-center gap-3 mt-1">
-          <p className="text-[13px] text-gray-400">{format(TODAY, 'EEEE, d MMMM')}</p>
-          {streak >= 2 && (
-            <span className="text-[13px] font-semibold" style={{ color: '#F97316' }}>
-              🔥 {streak} day streak
-            </span>
-          )}
-        </div>
-      </div>
+    <div className="min-h-screen bg-white">
 
-      <div className="px-5 pt-5 pb-24 space-y-5">
-
-        {/* Race countdown */}
-        {goal?.event_type && daysUntilRace !== null && (
-          <div
-            className="rounded-lg py-5 text-center"
-            style={{ backgroundColor: countdownBg, border: `1px solid ${countdownColor}22` }}
-          >
-            <p
-              style={{
-                fontFamily: "'Bebas Neue', sans-serif",
-                fontSize: 80,
-                lineHeight: 1,
-                color: countdownColor,
-              }}
-            >
-              {Math.abs(daysUntilRace)}
+      {/* ── HERO: full-bleed ink countdown ── */}
+      {hasHero ? (
+        <div style={{ backgroundColor: 'var(--ink)', paddingTop: 48 }}>
+          <div className="px-6 pt-5 pb-7">
+            <p style={{
+              fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 700,
+              fontSize: 10, letterSpacing: '0.2em', textTransform: 'uppercase',
+              color: 'var(--graphite-300)',
+            }}>
+              {daysUntilRace! < 0 ? 'Days since' : 'Days to go'}
             </p>
-            <p className="text-[13px] text-gray-400 mt-1.5">
-              {daysUntilRace < 0 ? 'days since' : 'days until'}
+            <p className="animate-fade-in" style={{
+              fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 900,
+              fontSize: 108, lineHeight: 0.85, letterSpacing: '-0.02em',
+              color: 'var(--volt)', marginTop: 2,
+            }}>
+              {Math.abs(daysUntilRace!)}
             </p>
-            <p className="text-[15px] font-semibold mt-1" style={{ color: countdownColor }}>
-              {goal.event_type} 🏁
+            <p style={{
+              fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 700,
+              fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase',
+              color: '#FFFFFF', marginTop: 8,
+            }}>
+              {goal!.event_type}
             </p>
 
-            {/* Plan progress bar */}
             {planProgressPct !== null && activePlanWeeks && planCurrentWeek && (
-              <div className="px-6 mt-4">
-                <div className="h-1 rounded-full overflow-hidden" style={{ backgroundColor: `${countdownColor}25` }}>
-                  <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${planProgressPct}%`, backgroundColor: countdownColor }}
-                  />
+              <div className="mt-5">
+                <div className="h-px rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+                  <div className="h-full rounded-full transition-all duration-700" style={{ width: `${planProgressPct}%`, backgroundColor: 'var(--volt)' }} />
                 </div>
-                <p className="text-right text-[11px] mt-1" style={{ color: `${countdownColor}99` }}>
-                  Week {planCurrentWeek} of {activePlanWeeks}
-                </p>
+                <div className="flex justify-between mt-1.5">
+                  <p style={{ fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 600, fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--graphite-500)' }}>
+                    Week {planCurrentWeek}
+                  </p>
+                  <p style={{ fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 600, fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--graphite-500)' }}>
+                    {activePlanWeeks} weeks total
+                  </p>
+                </div>
               </div>
             )}
           </div>
-        )}
+        </div>
+      ) : (
+        <div style={{ height: 48 }} />
+      )}
+
+      {/* ── CONTENT ── */}
+      <div className="px-5 pt-6 pb-24 space-y-6">
+
+        {/* Greeting */}
+        <div>
+          <h1 className="animate-fade-in" style={{
+            fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 800,
+            fontSize: 28, letterSpacing: '-0.01em', lineHeight: 0.95,
+            textTransform: 'uppercase', color: 'var(--ink)',
+          }}>
+            {getGreeting(user?.name)}
+          </h1>
+          <p className="mt-1.5 text-[13px] font-medium" style={{ color: 'var(--graphite-500)' }}>
+            {format(TODAY, 'EEEE, d MMMM')}
+            {streak >= 2 && ` · ${streak}d streak`}
+          </p>
+        </div>
 
         {/* Pre-plan banner */}
         {planNotStarted && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-            <p className="text-[13px] text-amber-700 leading-relaxed">
+          <div className="rounded-lg px-4 py-3" style={{ backgroundColor: 'var(--mist)', borderRadius: 10 }}>
+            <p className="text-[13px] leading-relaxed font-medium" style={{ color: 'var(--graphite-500)' }}>
               {prePlanMessage
                 ? prePlanMessage
                 : `Your plan starts on ${planStartDate
@@ -235,7 +243,7 @@ export default function TodayPage() {
 
         {/* Today's sessions */}
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400 mb-2">Today</p>
+          <p className="mb-3" style={sectionLabel}>Today</p>
           {hasSessions ? (
             <div className="space-y-2">
               {todaySessions.map(session => (
@@ -243,13 +251,13 @@ export default function TodayPage() {
               ))}
             </div>
           ) : !planNotStarted ? (
-            <p className="text-[14px] text-gray-400">Rest day — nothing scheduled.</p>
+            <p className="text-[14px] font-medium" style={{ color: 'var(--graphite-500)' }}>Rest day — nothing scheduled.</p>
           ) : null}
         </div>
 
         {/* This week */}
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400 mb-2">This week</p>
+          <p className="mb-3" style={sectionLabel}>This week</p>
           <WeekStrip sessions={weekSessions} today={TODAY} />
         </div>
 

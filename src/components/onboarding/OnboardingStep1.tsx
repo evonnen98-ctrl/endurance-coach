@@ -35,13 +35,14 @@ function Card({ selected, onClick, emoji, label, desc }: { selected: boolean; on
     <button
       onClick={onClick}
       className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all ${
-        selected ? 'border-black bg-black text-white' : 'border-gray-200 bg-white text-gray-900 hover:border-gray-400'
+        selected ? 'border-transparent text-[#1a2400]' : 'border-gray-200 bg-white text-gray-900 hover:border-gray-400'
       }`}
+      style={selected ? { backgroundColor: 'var(--lime-accent)' } : undefined}
     >
       <span className="text-xl flex-shrink-0">{emoji}</span>
       <div>
         <div className="font-semibold text-sm leading-tight">{label}</div>
-        <div className={`text-xs mt-0.5 leading-tight ${selected ? 'text-gray-300' : 'text-gray-500'}`}>{desc}</div>
+        <div className={`text-xs mt-0.5 leading-tight ${selected ? 'text-[#3a4a00]' : 'text-gray-500'}`}>{desc}</div>
       </div>
     </button>
   )
@@ -65,7 +66,7 @@ export default function OnboardingStep1({ initialDisciplines = [], initialPhase,
         <span className="text-xs text-gray-400 font-semibold uppercase tracking-widest">Step 1 of 4</span>
         <div className="flex gap-1.5 mt-2">
           {[1,2,3,4].map(i => (
-            <div key={i} className={`flex-1 h-0.5 rounded-full ${i <= 1 ? 'bg-black' : 'bg-gray-200'}`} />
+            <div key={i} className={`flex-1 h-0.5 rounded-full ${i <= 1 ? '' : 'bg-gray-200'}`} style={i <= 1 ? { backgroundColor: 'var(--lime-accent)' } : undefined} />
           ))}
         </div>
       </div>
@@ -108,7 +109,8 @@ export default function OnboardingStep1({ initialDisciplines = [], initialPhase,
       <button
         onClick={() => canContinue && onNext(disciplines, phase!, fitness!)}
         disabled={!canContinue}
-        className="w-full py-4 bg-black text-white font-semibold rounded-xl disabled:opacity-40 text-base"
+        className="w-full py-4 font-semibold rounded-xl disabled:opacity-40 text-base"
+        style={{ backgroundColor: 'var(--lime-accent)', color: '#1a2400' }}
       >
         Continue
       </button>

@@ -26,7 +26,6 @@ function trendLabel(sessions: Session[]) {
   return { direction: pct > 0 ? 'up' : 'down', pct: Math.abs(pct), weeks: weeks.length }
 }
 
-// Parse "mm:ss/km" or "mm:ss/100m" → total seconds (lower = faster)
 function parsePaceToSec(pace: string | undefined | null): number | null {
   if (!pace) return null
   const match = pace.match(/(\d+):(\d+)/)
@@ -59,18 +58,15 @@ function computePBs(logs: WorkoutLog[], sessions: Session[]): PBs {
     const date = log.logged_at?.split('T')[0] ?? ''
 
     if (disc === 'run') {
-      // Fastest pace
       const paceSec = parsePaceToSec(paceStr)
       if (paceSec && (!pbs.run || paceSec < parsePaceToSec(pbs.run.pace)!)) {
         pbs.run = { pace: `${formatPace(paceSec)}/km`, distance_km: distKm ?? 0, date }
       }
-      // Longest
       if (distKm && (!pbs.longestRun || distKm > pbs.longestRun.distance_km)) {
         pbs.longestRun = { distance_km: distKm, date }
       }
     }
     if (disc === 'ride') {
-      // Fastest speed (stored as km/h string, or pace)
       const paceSec = parsePaceToSec(paceStr)
       if (paceSec && (!pbs.ride || paceSec < parsePaceToSec(pbs.ride.pace)!)) {
         pbs.ride = { pace: `${formatPace(paceSec)}/km`, distance_km: distKm ?? 0, date }
@@ -91,6 +87,36 @@ function computePBs(logs: WorkoutLog[], sessions: Session[]): PBs {
   }
 
   return pbs
+}
+
+const sectionLabel: React.CSSProperties = {
+  fontFamily: '"Archivo", sans-serif',
+  fontStretch: '125%',
+  fontWeight: 700,
+  fontSize: 9,
+  letterSpacing: '0.18em',
+  textTransform: 'uppercase',
+  color: 'var(--graphite-300)',
+}
+
+const pbLabelStyle: React.CSSProperties = {
+  fontFamily: '"Archivo", sans-serif',
+  fontStretch: '125%',
+  fontWeight: 700,
+  fontSize: 8,
+  letterSpacing: '0.12em',
+  textTransform: 'uppercase',
+  color: 'var(--graphite-300)',
+}
+
+const pbValueStyle: React.CSSProperties = {
+  fontFamily: '"Archivo", sans-serif',
+  fontStretch: '125%',
+  fontWeight: 900,
+  fontSize: 26,
+  lineHeight: 1,
+  letterSpacing: '-0.01em',
+  color: 'var(--ink)',
 }
 
 export default function ProgressPage() {
@@ -122,24 +148,43 @@ export default function ProgressPage() {
 
   const trend = trendLabel(sessions)
   const pbs   = computePBs(workoutLogs, sessions)
-
   const hasPBs = pbs.run || pbs.ride || pbs.swim || pbs.longestRun || pbs.longestRide || pbs.longestSwim
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-white px-5 pt-14 pb-4">
+    <div className="min-h-screen bg-white">
+      {/* Header */}
+      <div className="bg-white px-5 pt-14 pb-4" style={{ borderBottom: '1px solid var(--mist)' }}>
         <div className="flex items-center justify-between">
-          <h1 className="text-[22px] font-semibold" style={{ color: '#1C1917' }}>Progress</h1>
-          <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
+          <h1 style={{
+            fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 800,
+            fontSize: 28, letterSpacing: '-0.01em', lineHeight: 0.9,
+            textTransform: 'uppercase', color: 'var(--ink)',
+          }}>
+            Progress
+          </h1>
+          {/* Distance / Time toggle — volt = active signal */}
+          <div className="flex rounded-full p-1 gap-1" style={{ backgroundColor: 'var(--mist)' }}>
             <button
               onClick={() => setMode('distance')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${mode === 'distance' ? 'bg-white shadow-sm text-black' : 'text-gray-500'}`}
+              className="px-3 py-1.5 text-xs font-semibold transition-all"
+              style={{
+                borderRadius: 999,
+                backgroundColor: mode === 'distance' ? 'var(--volt)' : 'transparent',
+                color: mode === 'distance' ? 'var(--ink)' : 'var(--graphite-500)',
+                fontFamily: '"Poppins", sans-serif',
+              }}
             >
               Distance
             </button>
             <button
               onClick={() => setMode('time')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${mode === 'time' ? 'bg-white shadow-sm text-black' : 'text-gray-500'}`}
+              className="px-3 py-1.5 text-xs font-semibold transition-all"
+              style={{
+                borderRadius: 999,
+                backgroundColor: mode === 'time' ? 'var(--volt)' : 'transparent',
+                color: mode === 'time' ? 'var(--ink)' : 'var(--graphite-500)',
+                fontFamily: '"Poppins", sans-serif',
+              }}
             >
               Time
             </button>
@@ -147,122 +192,103 @@ export default function ProgressPage() {
         </div>
       </div>
 
-      <div className="px-6 pt-6 space-y-6 pb-6">
+      <div className="px-5 pt-5 space-y-6 pb-6">
+        {/* Trend */}
         {trend && (
-          <div className="bg-white rounded-lg border border-gray-100 shadow-sm px-4 py-3 flex items-center gap-3">
-            <span className="text-xl">{trend.direction === 'up' ? '📈' : '📉'}</span>
-            <p className="text-sm text-gray-700">
+          <div className="rounded-lg px-4 py-3 flex items-center gap-3" style={{ backgroundColor: 'var(--mist)', borderRadius: 10 }}>
+            <div className="text-xl">{trend.direction === 'up' ? '↑' : '↓'}</div>
+            <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
               Run volume{' '}
-              <span className={trend.direction === 'up' ? 'text-green-600 font-semibold' : 'text-red-500 font-semibold'}>
-                {trend.direction} {trend.pct}%
-              </span>{' '}
+              <span className="font-semibold">{trend.direction === 'up' ? '↑' : '↓'} {trend.pct}%</span>{' '}
               over the last {trend.weeks} weeks
             </p>
           </div>
         )}
 
-        <div className="bg-white rounded-lg border border-gray-100 shadow-sm p-4">
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-[15px] font-semibold">Weekly volume</span>
-            <div className="flex gap-3 text-xs">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" />Swim</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500" />Ride</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500" />Run</span>
+        {/* Weekly volume */}
+        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--graphite-300)' }}>
+          <div className="px-4 pt-4 pb-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--mist)' }}>
+            <span style={sectionLabel}>Weekly volume</span>
+            <div className="flex gap-3">
+              {(['SWIM', 'RIDE', 'RUN'] as const).map(d => (
+                <span key={d} style={{ fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 700, fontSize: 8, letterSpacing: '0.12em', color: 'var(--graphite-300)', textTransform: 'uppercase' }}>
+                  {d}
+                </span>
+              ))}
             </div>
           </div>
-          <VolumeChart sessions={sessions} mode={mode} />
+          <div className="px-4 py-3">
+            <VolumeChart sessions={sessions} mode={mode} />
+          </div>
         </div>
 
+        {/* By the numbers */}
         <div>
-          <h2 className="font-semibold text-base mb-3">By the numbers</h2>
+          <p className="mb-3" style={sectionLabel}>By the numbers</p>
           <WeeklyTable sessions={sessions} />
         </div>
 
-        {/* Personal Bests (#11) */}
+        {/* Personal bests */}
         <div>
-          <h2 className="font-semibold text-base mb-3">Personal bests</h2>
+          <p className="mb-3" style={sectionLabel}>Personal bests</p>
           {!hasPBs ? (
-            <div className="bg-white rounded-lg border border-gray-100 shadow-sm p-5 text-center">
-              <p className="text-gray-400 text-sm">Complete sessions to start tracking your personal bests.</p>
+            <div className="rounded-xl py-12 flex flex-col items-center justify-center" style={{ border: '1px solid var(--graphite-300)' }}>
+              <p style={{
+                fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 900,
+                fontSize: 72, lineHeight: 0.9, letterSpacing: '-0.02em', color: 'var(--volt)',
+              }}>0</p>
+              <p style={{ ...sectionLabel, marginTop: 10 }}>Personal bests</p>
+              <p className="text-sm font-medium mt-2" style={{ color: 'var(--graphite-500)' }}>Complete sessions to start tracking</p>
             </div>
           ) : (
             <div className="space-y-2">
               {pbs.run && (
-                <div className="bg-white rounded-lg border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-sm">🏃</span>
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Fastest run pace</p>
-                      <p className="font-bebas" style={{ fontSize: 26, lineHeight: 1.1 }}>{pbs.run.pace}</p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-400">{pbs.run.date}</p>
-                </div>
+                <PBCard label="Fastest run pace" value={pbs.run.pace} date={pbs.run.date} disc="RUN" />
               )}
               {pbs.longestRun && (
-                <div className="bg-white rounded-lg border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-sm">📏</span>
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Longest run</p>
-                      <p className="font-bebas" style={{ fontSize: 26, lineHeight: 1.1 }}>{pbs.longestRun.distance_km.toFixed(1)}km</p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-400">{pbs.longestRun.date}</p>
-                </div>
+                <PBCard label="Longest run" value={`${pbs.longestRun.distance_km.toFixed(1)}km`} date={pbs.longestRun.date} disc="RUN" />
               )}
               {pbs.ride && (
-                <div className="bg-white rounded-lg border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-sm">🚴</span>
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Fastest ride pace</p>
-                      <p className="font-bebas" style={{ fontSize: 26, lineHeight: 1.1 }}>{pbs.ride.pace}</p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-400">{pbs.ride.date}</p>
-                </div>
+                <PBCard label="Fastest ride pace" value={pbs.ride.pace} date={pbs.ride.date} disc="RIDE" />
               )}
               {pbs.longestRide && (
-                <div className="bg-white rounded-lg border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-sm">📏</span>
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Longest ride</p>
-                      <p className="font-bebas" style={{ fontSize: 26, lineHeight: 1.1 }}>{pbs.longestRide.distance_km.toFixed(1)}km</p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-400">{pbs.longestRide.date}</p>
-                </div>
+                <PBCard label="Longest ride" value={`${pbs.longestRide.distance_km.toFixed(0)}km`} date={pbs.longestRide.date} disc="RIDE" />
               )}
               {pbs.swim && (
-                <div className="bg-white rounded-lg border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm">🏊</span>
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Fastest swim pace</p>
-                      <p className="font-bebas" style={{ fontSize: 26, lineHeight: 1.1 }}>{pbs.swim.pace}</p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-400">{pbs.swim.date}</p>
-                </div>
+                <PBCard label="Fastest swim pace" value={pbs.swim.pace} date={pbs.swim.date} disc="SWIM" />
               )}
               {pbs.longestSwim && (
-                <div className="bg-white rounded-lg border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm">📏</span>
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Longest swim</p>
-                      <p className="font-bebas" style={{ fontSize: 26, lineHeight: 1.1 }}>{(pbs.longestSwim.distance_km * 1000).toFixed(0)}m</p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-400">{pbs.longestSwim.date}</p>
-                </div>
+                <PBCard label="Longest swim" value={`${(pbs.longestSwim.distance_km * 1000).toFixed(0)}m`} date={pbs.longestSwim.date} disc="SWIM" />
               )}
             </div>
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function PBCard({ label, value, date, disc }: { label: string; value: string; date: string; disc: string }) {
+  return (
+    <div className="bg-white rounded-xl px-4 py-3 flex items-center justify-between" style={{ border: '1px solid var(--graphite-300)' }}>
+      <div className="flex items-center gap-3">
+        <span style={{
+          fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 700,
+          fontSize: 8, letterSpacing: '0.12em', textTransform: 'uppercase',
+          color: 'var(--graphite-300)', width: 28, flexShrink: 0,
+        }}>
+          {disc}
+        </span>
+        <div>
+          <p style={{ fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 700, fontSize: 8, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--graphite-300)', marginBottom: 2 }}>
+            {label}
+          </p>
+          <p style={{ fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 900, fontSize: 24, lineHeight: 1, letterSpacing: '-0.01em', color: 'var(--ink)' }}>
+            {value}
+          </p>
+        </div>
+      </div>
+      <p className="text-xs font-medium" style={{ color: 'var(--graphite-300)' }}>{date}</p>
     </div>
   )
 }

@@ -1,18 +1,18 @@
 import type { Discipline } from '../types'
 
 export const disciplineColor: Record<Discipline, string> = {
-  swim: '#3B82F6',
-  ride: '#F97316',
-  run: '#22C55E',
-  rest: '#9CA3AF',
+  swim: '#9CA3AF',
+  ride: '#9CA3AF',
+  run: '#9CA3AF',
+  rest: '#D1D5DB',
   brick: '#9CA3AF',
 }
 
 export const disciplineBg: Record<Discipline, string> = {
-  swim: 'bg-blue-50 text-blue-600',
-  ride: 'bg-orange-50 text-orange-600',
-  run: 'bg-green-50 text-green-600',
-  rest: 'bg-gray-100 text-gray-500',
+  swim: 'bg-gray-100 text-gray-600',
+  ride: 'bg-gray-100 text-gray-600',
+  run: 'bg-gray-100 text-gray-600',
+  rest: 'bg-gray-50 text-gray-400',
   brick: 'bg-gray-100 text-gray-600',
 }
 

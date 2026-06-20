@@ -69,9 +69,9 @@ export default function VolumeChart({ sessions, mode }: Props) {
         <XAxis dataKey="week" tick={{ fontSize: 11, fill: '#9ca3af' }} />
         <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} />
         <Tooltip content={<CustomTooltip mode={mode} />} />
-        <Line type="monotone" dataKey="Swim" stroke="#3B82F6" strokeWidth={2} dot={{ r: 3 }} />
-        <Line type="monotone" dataKey="Ride" stroke="#F97316" strokeWidth={2} dot={{ r: 3 }} />
-        <Line type="monotone" dataKey="Run" stroke="#22C55E" strokeWidth={2} dot={{ r: 3 }} />
+        <Line type="monotone" dataKey="Swim" stroke="#374151" strokeWidth={2} dot={{ r: 3 }} />
+        <Line type="monotone" dataKey="Ride" stroke="#6B7280" strokeWidth={2} dot={{ r: 3 }} strokeDasharray="5 3" />
+        <Line type="monotone" dataKey="Run" stroke="#9CA3AF" strokeWidth={2} dot={{ r: 3 }} strokeDasharray="2 2" />
       </LineChart>
     </ResponsiveContainer>
   )

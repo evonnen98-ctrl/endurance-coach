@@ -119,7 +119,8 @@ export default function ProfileDrawer({ user, onClose }: Props) {
             </button>
             <button
               onClick={handleRebuild}
-              className="flex-1 py-3 bg-black text-white font-semibold rounded-xl"
+              className="flex-1 py-3 font-semibold rounded-xl"
+            style={{ backgroundColor: 'var(--lime-accent)', color: '#1a2400' }}
             >
               Continue
             </button>
@@ -229,25 +230,27 @@ export default function ProfileDrawer({ user, onClose }: Props) {
           <button
             onClick={save}
             disabled={saving}
-            className="w-full py-3.5 bg-black text-white font-semibold rounded-xl disabled:opacity-60"
+            className="w-full py-3.5 font-semibold rounded-xl disabled:opacity-60"
+            style={{ backgroundColor: 'var(--lime-accent)', color: '#1a2400' }}
           >
             {saving ? 'Saving…' : 'Save changes'}
           </button>
 
           {notesSaved && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-              <p className="text-[15px] font-semibold text-amber-900 mb-1">Notes updated.</p>
-              <p className="text-[14px] text-amber-700 mb-3">Would you like to rebuild your plan to reflect these changes?</p>
+            <div className="rounded-xl p-4" style={{ backgroundColor: 'rgba(212,255,61,0.1)', border: '1px solid rgba(212,255,61,0.4)' }}>
+              <p className="text-[15px] font-semibold mb-1" style={{ color: '#1a2400' }}>Notes updated.</p>
+              <p className="text-[14px] mb-3 text-gray-600">Would you like to rebuild your plan to reflect these changes?</p>
               <div className="flex gap-2">
                 <button
                   onClick={onClose}
-                  className="flex-1 py-2.5 border border-amber-300 text-amber-800 text-sm font-semibold rounded-xl"
+                  className="flex-1 py-2.5 border border-gray-200 text-gray-600 text-sm font-semibold rounded-xl"
                 >
                   Not now
                 </button>
                 <button
                   onClick={() => setConfirmRebuild(true)}
-                  className="flex-1 py-2.5 bg-amber-700 text-white text-sm font-semibold rounded-xl"
+                  className="flex-1 py-2.5 text-sm font-semibold rounded-xl"
+                  style={{ backgroundColor: 'var(--lime-accent)', color: '#1a2400' }}
                 >
                   Rebuild plan
                 </button>
@@ -266,7 +269,8 @@ export default function ProfileDrawer({ user, onClose }: Props) {
                 </p>
                 <button
                   onClick={() => setConfirmRebuild(true)}
-                  className="w-full py-2.5 border-2 border-black text-black font-semibold rounded-xl text-sm hover:bg-black hover:text-white transition-colors"
+                  className="w-full py-2.5 border-2 font-semibold rounded-xl text-sm transition-colors"
+                  style={{ borderColor: 'var(--lime-accent)', color: '#0A0A0A' }}
                 >
                   Update plan settings
                 </button>

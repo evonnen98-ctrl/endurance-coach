@@ -61,7 +61,7 @@ export default function OnboardingStep3({ initialDaysPerWeek, initialSelectedDay
         <span className="text-xs text-gray-400 font-semibold uppercase tracking-widest">Step 3 of 4</span>
         <div className="flex gap-1.5 mt-2">
           {[1,2,3,4].map(i => (
-            <div key={i} className={`flex-1 h-0.5 rounded-full ${i <= 3 ? 'bg-black' : 'bg-gray-200'}`} />
+            <div key={i} className={`flex-1 h-0.5 rounded-full ${i <= 3 ? '' : 'bg-gray-200'}`} style={i <= 3 ? { backgroundColor: 'var(--lime-accent)' } : undefined} />
           ))}
         </div>
       </div>
@@ -79,9 +79,10 @@ export default function OnboardingStep3({ initialDaysPerWeek, initialSelectedDay
               onClick={() => pickDaysPerWeek(n)}
               className={`flex-1 py-3 rounded-xl border-2 text-sm font-semibold transition-all ${
                 daysPerWeek === n
-                  ? 'border-black bg-black text-white'
+                  ? 'border-transparent text-[#1a2400]'
                   : 'border-gray-200 bg-white text-gray-900 hover:border-gray-400'
               }`}
+              style={daysPerWeek === n ? { backgroundColor: 'var(--lime-accent)' } : undefined}
             >
               {n}
             </button>
@@ -108,9 +109,10 @@ export default function OnboardingStep3({ initialDaysPerWeek, initialSelectedDay
                 onClick={() => toggleDay(day)}
                 className={`py-3 rounded-xl border-2 text-sm font-semibold transition-all ${
                   selectedDays.includes(day)
-                    ? 'border-black bg-black text-white'
+                    ? 'border-transparent text-[#1a2400]'
                     : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
                 }`}
+                style={selectedDays.includes(day) ? { backgroundColor: 'var(--lime-accent)' } : undefined}
               >
                 {day}
               </button>
@@ -136,7 +138,8 @@ export default function OnboardingStep3({ initialDaysPerWeek, initialSelectedDay
             preferredLongDay: inferPreferredLongDay(selectedDays),
           })}
           disabled={!canContinue}
-          className="flex-1 py-4 bg-black text-white font-semibold rounded-xl disabled:opacity-40 text-base"
+          className="flex-1 py-4 font-semibold rounded-xl disabled:opacity-40 text-base"
+          style={{ backgroundColor: 'var(--lime-accent)', color: '#1a2400' }}
         >
           Continue
         </button>

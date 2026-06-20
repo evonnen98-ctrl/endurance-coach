@@ -98,8 +98,9 @@ export default function OnboardingFlow({ existingUser }: Props) {
     setDraft(d => ({ ...d, ...partial }))
   }
 
-  // ── Main plan generation — preserves all field names / DB writes ──────────────
+  // ── Main plan generation — all Supabase writes go via server (service role key) ──
   async function finish(final: DraftData) {
+    console.log('Create plan clicked', { userId: DEMO_USER_ID, formData: final })
     setBuilding(true)
     setBuildMessage('Connecting to your coach…')
     let planGenSucceeded = false
@@ -118,41 +119,27 @@ export default function OnboardingFlow({ existingUser }: Props) {
     if (final.preferredLongDay)          preferences.preferred_long_day     = final.preferredLongDay
     if (final.eventType)                 preferences.goal_event_type        = final.eventType
     if (final.planStartDate)             preferences.plan_start_date        = final.planStartDate
-    // training_days = comma-separated day names: "Tue,Thu,Sat,Sun"
     preferences.training_days = final.selectedDays.join(',')
     if (final.selectedDays.length > 0)   preferences.training_days_per_week = final.selectedDays.length
 
-    // Delete existing plans so a clean plan is generated
-    const { data: oldPlans } = await supabase
-      .from('training_plans').select('id').eq('user_id', DEMO_USER_ID)
-    if (oldPlans?.length) {
-      const oldIds = oldPlans.map(p => p.id)
-      await supabase.from('sessions').delete().in('plan_id', oldIds)
-      await supabase.from('training_plans').delete().in('id', oldIds)
-    }
-
-    await Promise.all([
-      supabase.from('users').upsert({
-        id:                   DEMO_USER_ID,
-        name:                 existingUser?.name ?? 'Athlete',
-        disciplines:          final.disciplines,
-        training_phase:       final.phase,
-        training_style:       existingUser?.training_style ?? 'moderate',
-        preferences,
-        coach_notes_freetext: final.coachNote || existingUser?.coach_notes_freetext || null,
-        onboarding_complete:  false,
-      }),
-      supabase.from('goals').upsert({
-        id:          '00000000-0000-0000-0000-000000000002',
-        user_id:     DEMO_USER_ID,
-        discipline:  final.disciplines.length > 1 ? 'triathlon' : final.disciplines[0],
-        event_type:  final.eventType  || null,
-        target_date: final.targetDate || null,
-        status:      'active',
-      }),
-    ])
-
+    // Save user/goal + delete old plans via server (bypasses RLS on anon key)
     await waitForServer()
+    const saveRes = await fetch('/api/onboarding/save', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId:      DEMO_USER_ID,
+        name:        existingUser?.name ?? 'Athlete',
+        disciplines: final.disciplines,
+        phase:       final.phase,
+        preferences,
+        eventType:   final.eventType  || null,
+        targetDate:  final.targetDate || null,
+      }),
+    })
+    if (!saveRes.ok) console.warn('save-onboarding failed:', await saveRes.text())
+    else console.log('Onboarding data saved via server')
+
     setBuildMessage('Building your training plan…')
 
     // SSE plan generation (with one retry on failure)
@@ -193,7 +180,11 @@ export default function OnboardingFlow({ existingUser }: Props) {
     }
 
     setBuildMessage('Almost there…')
-    await supabase.from('users').update({ onboarding_complete: true }).eq('id', DEMO_USER_ID)
+    await fetch('/api/onboarding/complete', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: DEMO_USER_ID }),
+    })
 
     await Promise.all([
       queryClient.refetchQueries({ queryKey: ['active-plan-id'] }),

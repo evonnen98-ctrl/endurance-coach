@@ -66,7 +66,7 @@ export default function OnboardingStep2({
         <span className="text-xs text-gray-400 font-semibold uppercase tracking-widest">Step 2 of 4</span>
         <div className="flex gap-1.5 mt-2">
           {[1,2,3,4].map(i => (
-            <div key={i} className={`flex-1 h-0.5 rounded-full ${i <= 2 ? 'bg-black' : 'bg-gray-200'}`} />
+            <div key={i} className={`flex-1 h-0.5 rounded-full ${i <= 2 ? '' : 'bg-gray-200'}`} style={i <= 2 ? { backgroundColor: 'var(--lime-accent)' } : undefined} />
           ))}
         </div>
       </div>
@@ -86,9 +86,10 @@ export default function OnboardingStep2({
               onClick={() => setEventType(eventType === opt ? '' : opt)}
               className={`py-3 px-3 rounded-xl border-2 text-sm font-medium text-center transition-all ${
                 eventType === opt
-                  ? 'border-black bg-black text-white'
+                  ? 'border-transparent text-[#1a2400]'
                   : 'border-gray-200 bg-white text-gray-800 hover:border-gray-400'
               }`}
+              style={eventType === opt ? { backgroundColor: 'var(--lime-accent)' } : undefined}
             >
               {opt}
             </button>
@@ -122,9 +123,10 @@ export default function OnboardingStep2({
               onClick={() => selectStart(opt.label, opt.offset)}
               className={`py-3 px-4 rounded-xl border-2 text-sm font-medium transition-all ${
                 startOption === opt.label
-                  ? 'border-black bg-black text-white'
+                  ? 'border-transparent text-[#1a2400]'
                   : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
               }`}
+              style={startOption === opt.label ? { backgroundColor: 'var(--lime-accent)' } : undefined}
             >
               {opt.label}
             </button>
@@ -147,7 +149,8 @@ export default function OnboardingStep2({
         <button
           onClick={() => canContinue && onNext({ eventType, targetDate, planStartDate })}
           disabled={!canContinue}
-          className="flex-1 py-4 bg-black text-white font-semibold rounded-xl disabled:opacity-40 text-base"
+          className="flex-1 py-4 font-semibold rounded-xl disabled:opacity-40 text-base"
+          style={{ backgroundColor: 'var(--lime-accent)', color: '#1a2400' }}
         >
           Continue
         </button>

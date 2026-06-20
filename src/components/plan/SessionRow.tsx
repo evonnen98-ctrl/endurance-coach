@@ -11,6 +11,15 @@ interface Props {
   showOriginal?: boolean
 }
 
+const discLabelStyle: React.CSSProperties = {
+  fontFamily: '"Archivo", sans-serif',
+  fontStretch: '125%',
+  fontWeight: 700,
+  fontSize: 8,
+  letterSpacing: '0.12em',
+  textTransform: 'uppercase',
+}
+
 export default function SessionRow({ session, dayLabel, showOriginal = false }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [showLog, setShowLog] = useState(false)
@@ -23,6 +32,7 @@ export default function SessionRow({ session, dayLabel, showOriginal = false }: 
   const isComplete = session.status === 'complete'
   const isMissed   = session.status === 'missed'
   const isModified = session.status === 'modified'
+  const isKeySession = session.session_type === 'interval' || session.session_type === 'tempo'
   const dotColor   = disciplineColor[session.discipline]
 
   const orig = (isModified && showOriginal && session.original_data) ? session.original_data as Session : null
@@ -53,87 +63,87 @@ export default function SessionRow({ session, dayLabel, showOriginal = false }: 
 
   return (
     <>
-      <div className={`bg-white rounded-xl border overflow-hidden ${isMissed ? 'border-red-100 opacity-70' : 'border-gray-100'}`}>
+      <div className={`bg-white rounded-xl overflow-hidden ${isMissed ? 'opacity-50' : ''}`} style={{ border: '1px solid var(--graphite-300)' }}>
         <button
           className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
           onClick={() => setExpanded(e => !e)}
         >
-          <span className="text-xs text-gray-400 font-medium w-7 flex-shrink-0">{dayLabel}</span>
-          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: dotColor }} />
+          <span className="text-[11px] font-semibold w-7 flex-shrink-0" style={{ color: 'var(--graphite-300)' }}>{dayLabel}</span>
+          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: dotColor }} />
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-2">
-              <span className={`text-[15px] font-medium ${isComplete || isMissed ? 'text-gray-400' : 'text-black'}`}>
+              <span className="text-[15px] font-semibold" style={{ color: isComplete || isMissed ? 'var(--graphite-300)' : 'var(--ink)' }}>
                 {displayTitle}
               </span>
+              {isKeySession && !isComplete && !isMissed && (
+                <span style={{ ...discLabelStyle, backgroundColor: 'var(--ink)', color: '#FFFFFF', padding: '2px 6px', borderRadius: 4 }}>
+                  Key
+                </span>
+              )}
               {isModified && (
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${showOriginal ? 'bg-gray-100 text-gray-500' : 'bg-amber-100 text-amber-700'}`}>
+                <span style={{ ...discLabelStyle, backgroundColor: 'var(--mist)', color: 'var(--graphite-500)', padding: '2px 6px', borderRadius: 4 }}>
                   {showOriginal ? 'Original' : 'Modified'}
                 </span>
               )}
             </div>
             {displayDesc && (
-              <p className="text-[13px] text-gray-500 truncate">{displayDesc}</p>
+              <p className="text-[12px] font-medium truncate mt-0.5" style={{ color: 'var(--graphite-500)' }}>{displayDesc}</p>
             )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {isComplete && <span className="text-[10px] text-green-500">✓</span>}
-            {isMissed && <span className="text-[10px] text-red-400">Missed</span>}
-            <span className="text-[13px] text-gray-500">{isRest ? '—' : durationLabel}</span>
-            <span className="text-gray-300 text-sm">{expanded ? '∧' : '∨'}</span>
+            {isComplete && <span className="text-[10px] font-semibold" style={{ color: 'var(--graphite-300)' }}>Done</span>}
+            {isMissed && <span className="text-[10px] font-medium" style={{ color: 'var(--graphite-300)' }}>Missed</span>}
+            <span className="text-[13px] font-medium" style={{ color: 'var(--graphite-500)' }}>{isRest ? '—' : durationLabel}</span>
+            <ChevronIcon expanded={expanded} />
           </div>
         </button>
 
         {expanded && !isRest && (
-          <div className="px-4 pb-4 space-y-3 border-t border-gray-50 pt-3">
-            {/* Missed session note */}
+          <div className="px-4 pb-4 space-y-3 pt-3" style={{ borderTop: '1px solid var(--mist)' }}>
             {isMissed && (
-              <div className="bg-red-50 rounded-xl px-3 py-2.5">
-                <p className="text-sm text-red-700">Missed session — no stress. Your coach has factored this into upcoming sessions.</p>
+              <div className="rounded-lg px-3 py-2.5" style={{ backgroundColor: 'var(--mist)' }}>
+                <p className="text-sm font-medium" style={{ color: 'var(--graphite-500)' }}>Missed session — no stress. Your coach has factored this into upcoming sessions.</p>
               </div>
             )}
 
-            {/* Modification reason */}
             {isModified && session.modification_reason && (
-              <div className="bg-amber-50 rounded-xl px-3 py-2.5">
-                <div className="text-xs font-medium text-amber-600 uppercase tracking-wider mb-1">Why this changed</div>
-                <p className="text-sm text-amber-800 leading-relaxed">{session.modification_reason}</p>
+              <div className="rounded-lg px-3 py-2.5" style={{ backgroundColor: 'var(--mist)' }}>
+                <div style={{ ...discLabelStyle, color: 'var(--graphite-500)', marginBottom: 4 }}>Why this changed</div>
+                <p className="text-sm font-medium leading-relaxed" style={{ color: 'var(--ink)' }}>{session.modification_reason}</p>
               </div>
             )}
 
-            {/* Coaching rationale */}
             {session.coaching_rationale && !isMissed && (
-              <div className="bg-gray-50 rounded-xl px-3 py-2.5">
-                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Why this session</div>
-                <p className="text-[14px] text-gray-700 leading-relaxed">{session.coaching_rationale}</p>
+              <div className="rounded-lg px-3 py-2.5" style={{ backgroundColor: 'var(--mist)' }}>
+                <div style={{ ...discLabelStyle, color: 'var(--graphite-300)', marginBottom: 4 }}>Why this session</div>
+                <p className="text-[14px] font-medium leading-relaxed" style={{ color: 'var(--ink)' }}>{session.coaching_rationale}</p>
               </div>
             )}
 
-            {/* Targets */}
             <div className="grid grid-cols-2 gap-2">
               {session.target_pace && (
-                <div className="bg-gray-50 rounded-xl px-3 py-2">
-                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-0.5">
-                    {session.discipline === 'ride' ? 'Target speed' : session.discipline === 'swim' ? 'Target pace' : 'Target pace'}
+                <div className="rounded-lg px-3 py-2" style={{ backgroundColor: 'var(--mist)' }}>
+                  <div style={{ ...discLabelStyle, color: 'var(--graphite-300)', marginBottom: 2 }}>
+                    {session.discipline === 'ride' ? 'Target speed' : 'Target pace'}
                   </div>
-                  <div className="text-sm font-semibold">{session.target_pace}</div>
+                  <div className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{session.target_pace}</div>
                 </div>
               )}
               {session.effort_zone && (
-                <div className="bg-gray-50 rounded-xl px-3 py-2">
-                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-0.5">Effort</div>
-                  <div className="text-sm font-semibold">{session.effort_zone}</div>
+                <div className="rounded-lg px-3 py-2" style={{ backgroundColor: 'var(--mist)' }}>
+                  <div style={{ ...discLabelStyle, color: 'var(--graphite-300)', marginBottom: 2 }}>Effort</div>
+                  <div className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{session.effort_zone}</div>
                 </div>
               )}
             </div>
 
-            {/* Session structure */}
             {session.session_structure && session.session_structure.length > 0 && (
               <div>
-                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Session structure</div>
+                <div style={{ ...discLabelStyle, color: 'var(--graphite-300)', marginBottom: 8 }}>Session structure</div>
                 <ol className="space-y-1">
                   {session.session_structure.map((step, i) => (
-                    <li key={i} className="flex gap-2 text-[14px] text-gray-700">
-                      <span className="text-gray-400 flex-shrink-0">{i + 1}.</span>
+                    <li key={i} className="flex gap-2 text-[14px] font-medium" style={{ color: 'var(--ink)' }}>
+                      <span style={{ color: 'var(--graphite-300)', flexShrink: 0 }}>{i + 1}.</span>
                       <span>{step.description}</span>
                     </li>
                   ))}
@@ -141,7 +151,6 @@ export default function SessionRow({ session, dayLabel, showOriginal = false }: 
               </div>
             )}
 
-            {/* Session note (#8) */}
             {showNote ? (
               <div>
                 <textarea
@@ -150,19 +159,26 @@ export default function SessionRow({ session, dayLabel, showOriginal = false }: 
                   placeholder="How did this feel? Any issues?"
                   value={noteText}
                   onChange={e => setNoteText(e.target.value)}
-                  className="w-full p-3 border border-gray-200 rounded-xl text-sm resize-none"
+                  className="w-full p-3 rounded-lg text-sm resize-none"
+                  style={{ border: '1px solid var(--graphite-300)', backgroundColor: '#FFFFFF', color: 'var(--ink)' }}
                 />
                 <div className="flex gap-2 mt-2">
                   <button
                     onClick={saveNote}
                     disabled={!noteText.trim() || savingNote}
-                    className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-xl disabled:opacity-40"
+                    className="px-4 py-2 text-xs disabled:opacity-40"
+                    style={{
+                      fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 800,
+                      letterSpacing: '0.1em', textTransform: 'uppercase', borderRadius: 999,
+                      backgroundColor: 'var(--volt)', color: 'var(--ink)',
+                    }}
                   >
                     {savingNote ? 'Saving…' : 'Save note'}
                   </button>
                   <button
                     onClick={() => setShowNote(false)}
-                    className="px-4 py-2 border border-gray-200 text-xs font-semibold rounded-xl text-gray-600"
+                    className="px-4 py-2 text-xs font-semibold rounded-full"
+                    style={{ border: '1px solid var(--graphite-300)', color: 'var(--graphite-500)' }}
                   >
                     Cancel
                   </button>
@@ -170,24 +186,24 @@ export default function SessionRow({ session, dayLabel, showOriginal = false }: 
               </div>
             ) : (
               <div className="flex items-center justify-between pt-1">
-                <div className="flex gap-3 text-xs text-gray-400">
+                <div className="flex gap-3 text-xs font-medium" style={{ color: 'var(--graphite-300)' }}>
                   {session.effort_zone && <span>Effort: {session.effort_zone}</span>}
                   {session.duration_minutes && <span>{durationLabel}</span>}
                 </div>
                 <div className="flex gap-3">
-                  {/* Note icon */}
                   <button
                     onClick={e => { e.stopPropagation(); setShowNote(true) }}
-                    className="text-gray-400 hover:text-gray-600 flex items-center gap-1 text-xs"
-                    title="Add a note"
+                    className="flex items-center gap-1 text-xs font-medium"
+                    style={{ color: 'var(--graphite-500)' }}
                   >
-                    <MessageSquare size={13} />
-                    {noteSaved ? <span className="text-green-500">Saved</span> : 'Note'}
+                    <MessageSquare size={12} />
+                    {noteSaved ? 'Saved' : 'Note'}
                   </button>
                   {!isComplete && !isMissed && (
                     <button
                       onClick={e => { e.stopPropagation(); setShowLog(true) }}
-                      className="text-xs font-medium text-gray-600 underline"
+                      className="text-xs font-semibold underline"
+                      style={{ color: 'var(--graphite-500)' }}
                     >
                       Log workout
                     </button>
@@ -203,5 +219,16 @@ export default function SessionRow({ session, dayLabel, showOriginal = false }: 
         <WorkoutLogModal session={session} onClose={() => setShowLog(false)} />
       )}
     </>
+  )
+}
+
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      width="12" height="12" viewBox="0 0 12 12" fill="none"
+      style={{ color: 'var(--graphite-300)', transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}
+    >
+      <path d="M4.5 2.5L7.5 6L4.5 9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   )
 }

@@ -19,16 +19,15 @@ export default function Layout() {
   })
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Fixed top header bar — same height/position on every page */}
-      <header className="fixed top-0 left-0 right-0 h-12 bg-white z-40">
+    <div className="min-h-screen bg-white">
+      <header className="fixed top-0 left-0 right-0 h-12 bg-white z-40" style={{ borderBottom: '1px solid var(--mist)' }}>
         <div className="max-w-[860px] mx-auto h-full flex items-center justify-end px-5">
           <button
             onClick={() => setShowProfile(true)}
-            className="p-2 rounded-full hover:bg-gray-100 transition-colors"
+            className="p-2 rounded-full transition-colors hover:bg-mist"
             aria-label="Profile & settings"
           >
-            <User size={18} className="text-gray-500" />
+            <User size={18} style={{ color: 'var(--graphite-500)' }} />
           </button>
         </div>
       </header>

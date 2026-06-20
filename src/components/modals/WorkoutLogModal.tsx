@@ -132,11 +132,10 @@ export default function WorkoutLogModal({ session, onClose }: Props) {
                   <button
                     key={s}
                     onClick={() => saveRating(s)}
-                    className={`flex-1 py-3 text-2xl rounded-xl border-2 transition-all ${
-                      rating !== null && s <= rating
-                        ? 'border-yellow-400 bg-yellow-50'
-                        : 'border-gray-100 bg-gray-50'
-                    }`}
+                    className="flex-1 py-3 text-2xl rounded-xl border-2 transition-all"
+                    style={rating !== null && s <= rating
+                      ? { backgroundColor: 'var(--mist)', borderColor: 'var(--ink)' }
+                      : { backgroundColor: '#F9FAFB', borderColor: '#F3F4F6' }}
                   >
                     {rating !== null && s <= rating ? '★' : '☆'}
                   </button>
@@ -147,7 +146,8 @@ export default function WorkoutLogModal({ session, onClose }: Props) {
 
             <button
               onClick={onClose}
-              className="w-full py-4 bg-black text-white font-semibold rounded-xl"
+              className="w-full py-4 font-semibold rounded-xl"
+              style={{ backgroundColor: 'var(--volt)', color: 'var(--ink)' }}
             >
               Done
             </button>
@@ -211,7 +211,8 @@ export default function WorkoutLogModal({ session, onClose }: Props) {
                 max={10}
                 value={rpe}
                 onChange={e => setRpe(parseInt(e.target.value))}
-                className="w-full accent-black"
+                className="w-full"
+                style={{ accentColor: 'var(--volt)' }}
               />
               <div className="flex justify-between text-[10px] text-gray-400 mt-1">
                 <span>Easy</span>
@@ -274,10 +275,11 @@ export default function WorkoutLogModal({ session, onClose }: Props) {
             <button
               onClick={submit}
               disabled={submitting}
-              className="w-full py-4 bg-black text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
+              className="w-full py-4 font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
+              style={{ backgroundColor: 'var(--volt)', color: 'var(--ink)' }}
             >
               {submitting ? (
-                <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: '#1a2400', borderTopColor: 'transparent' }} />
               ) : 'Save workout'}
             </button>
           </div>
