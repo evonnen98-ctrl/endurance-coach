@@ -26,8 +26,18 @@ app.get('/api/health', (_req, res) => {
 
 // Serve the Vite build whenever dist/ exists (production and any local build)
 if (existsSync(distPath)) {
-  app.use(express.static(distPath))
+  // Hashed assets (/assets/*.js, /assets/*.css) — safe to cache forever
+  app.use('/assets', express.static(path.join(distPath, 'assets'), {
+    maxAge: '1y',
+    immutable: true,
+  }))
+
+  // Public folder (images, favicon, etc.) — moderate cache, no immutable
+  app.use(express.static(distPath, { index: false, maxAge: '1h' }))
+
+  // index.html — must never be cached; stale HTML points to old hashed bundles
   app.get('*', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store')
     res.sendFile(path.join(distPath, 'index.html'))
   })
 }
