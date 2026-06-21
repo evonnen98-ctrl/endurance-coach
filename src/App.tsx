@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useEffect } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase, DEMO_USER_ID } from './lib/supabase'
 import type { User } from './types'
@@ -9,6 +10,14 @@ import Progress from './pages/Progress'
 import Coach from './pages/Coach'
 import History from './pages/History'
 import OnboardingFlow from './components/onboarding/OnboardingFlow'
+
+function ScrollToTop() {
+  const { pathname } = useLocation()
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [pathname])
+  return null
+}
 
 export default function App() {
   const { data: user, isLoading } = useQuery({
@@ -34,6 +43,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/today" replace />} />

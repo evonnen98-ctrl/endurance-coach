@@ -132,6 +132,16 @@ export default function TodaySession({ session, checkin, weekSessions = [] }: Pr
                 <span className={`text-[15px] font-semibold block truncate`} style={{ color: isComplete ? 'var(--graphite-300)' : 'var(--ink)' }}>
                   {session.title}
                 </span>
+                {detailParts.length > 0 && (
+                  <p className="text-[12px] font-medium mt-1" style={{ color: 'var(--graphite-500)' }}>
+                    {detailParts.join(' · ')}
+                  </p>
+                )}
+                {coachNote && !isComplete && (
+                  <p className="text-[12px] italic mt-0.5 line-clamp-1 font-medium" style={{ color: 'var(--graphite-300)' }}>
+                    {coachNote}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
@@ -145,18 +155,6 @@ export default function TodaySession({ session, checkin, weekSessions = [] }: Pr
               )}
             </div>
           </div>
-
-          {detailParts.length > 0 && (
-            <p className="text-[12px] font-medium mt-1 ml-[52px]" style={{ color: 'var(--graphite-500)' }}>
-              {detailParts.join(' · ')}
-            </p>
-          )}
-
-          {coachNote && !isComplete && (
-            <p className="text-[12px] italic mt-0.5 ml-[52px] line-clamp-1 font-medium" style={{ color: 'var(--graphite-300)' }}>
-              {coachNote}
-            </p>
-          )}
         </div>
 
         {/* Mark complete */}

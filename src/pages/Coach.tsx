@@ -56,7 +56,8 @@ export default function CoachPage() {
   const [messages, setMessages]     = useState<ChatMessage[]>(loadHistory)
   const [input, setInput]           = useState('')
   const [sending, setSending]       = useState(false)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const bottomRef    = useRef<HTMLDivElement>(null)
+  const prevMsgLen   = useRef<number | null>(null)
 
   const { data: user } = useQuery({
     queryKey: ['user'],
@@ -77,8 +78,13 @@ export default function CoachPage() {
   })
 
   useEffect(() => {
-    if (activeTab === 'chat') bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, activeTab])
+    const prev = prevMsgLen.current
+    prevMsgLen.current = messages.length
+    // Only scroll to bottom when a new message is added — never on mount or re-render
+    if (prev !== null && messages.length > prev && activeTab === 'chat') {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages.length, activeTab])
 
   async function send() {
     const text = input.trim()

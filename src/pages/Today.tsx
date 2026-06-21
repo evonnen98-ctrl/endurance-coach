@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect } from 'react'
 import { format, differenceInDays, parseISO, subDays } from 'date-fns'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase, DEMO_USER_ID } from '../lib/supabase'
@@ -9,30 +9,6 @@ import WeekStrip from '../components/today/WeekStrip'
 const TODAY     = new Date()
 const TODAY_STR = format(TODAY, 'yyyy-MM-dd')
 const YESTERDAY = format(subDays(TODAY, 1), 'yyyy-MM-dd')
-
-function getGreeting(name?: string): string {
-  const h = TODAY.getHours()
-  const n = name ? `, ${name}` : ''
-  if (h >= 22 || h < 5) return `Late night${n}`
-  if (h < 12)           return `Good morning${n}`
-  if (h < 17)           return `Good afternoon${n}`
-  return `Good evening${n}`
-}
-
-function calcStreak(dates: string[]): number {
-  if (!dates.length) return 0
-  const dateSet = new Set(dates)
-  let count = 0
-  let check = new Date(TODAY)
-  if (!dateSet.has(format(check, 'yyyy-MM-dd'))) {
-    check = subDays(check, 1)
-  }
-  while (dateSet.has(format(check, 'yyyy-MM-dd'))) {
-    count++
-    check = subDays(check, 1)
-  }
-  return count
-}
 
 const sectionLabel: React.CSSProperties = {
   fontFamily: '"Archivo", sans-serif',
@@ -72,22 +48,6 @@ export default function TodayPage() {
         .from('training_plans').select('id, start_date, total_weeks').eq('user_id', DEMO_USER_ID).eq('status', 'active')
         .order('created_at', { ascending: false }).limit(1).maybeSingle()
       return data ?? null
-    },
-  })
-
-  const { data: recentCompletedDates = [] } = useQuery({
-    queryKey: ['streak-dates'],
-    queryFn: async () => {
-      const cutoff = format(subDays(TODAY, 30), 'yyyy-MM-dd')
-      const { data } = await supabase
-        .from('sessions')
-        .select('scheduled_date')
-        .eq('user_id', DEMO_USER_ID)
-        .eq('status', 'complete')
-        .neq('discipline', 'rest')
-        .gte('scheduled_date', cutoff)
-        .lte('scheduled_date', TODAY_STR)
-      return (data ?? []).map(s => s.scheduled_date as string)
     },
   })
 
@@ -148,8 +108,6 @@ export default function TodayPage() {
     markMissed()
   }, [activePlanId])
 
-  const streak = useMemo(() => calcStreak(recentCompletedDates), [recentCompletedDates])
-
   const daysUntilRace = goal?.target_date
     ? differenceInDays(parseISO(goal.target_date), TODAY)
     : null
@@ -163,7 +121,12 @@ export default function TodayPage() {
 
       {/* ── HERO: full-bleed ink countdown ── */}
       {hasHero ? (
-        <div style={{ backgroundColor: 'var(--ink)', paddingTop: 48 }}>
+        <div style={{
+          paddingTop: 48,
+          backgroundImage: 'linear-gradient(to bottom, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.72) 60%), url(/mathias-reding-G96xGokbTUM-unsplash.jpg)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }}>
           <div className="px-6 pt-5 pb-7">
             <p style={{
               fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 700,
@@ -210,21 +173,6 @@ export default function TodayPage() {
 
       {/* ── CONTENT ── */}
       <div className="px-5 pt-6 pb-24 space-y-6">
-
-        {/* Greeting */}
-        <div>
-          <h1 className="animate-fade-in" style={{
-            fontFamily: '"Archivo", sans-serif', fontStretch: '125%', fontWeight: 800,
-            fontSize: 28, letterSpacing: '-0.01em', lineHeight: 0.95,
-            textTransform: 'uppercase', color: 'var(--ink)',
-          }}>
-            {getGreeting(user?.name)}
-          </h1>
-          <p className="mt-1.5 text-[13px] font-medium" style={{ color: 'var(--graphite-500)' }}>
-            {format(TODAY, 'EEEE, d MMMM')}
-            {streak >= 2 && ` · ${streak}d streak`}
-          </p>
-        </div>
 
         {/* Pre-plan banner */}
         {planNotStarted && (

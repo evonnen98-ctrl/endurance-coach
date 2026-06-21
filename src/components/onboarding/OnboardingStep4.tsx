@@ -62,7 +62,7 @@ export default function OnboardingStep4({ disciplines, initialStats = {}, initia
         <span className="text-xs text-gray-400 font-semibold uppercase tracking-widest">Step 4 of 4</span>
         <div className="flex gap-1.5 mt-2">
           {[1,2,3,4].map(i => (
-            <div key={i} className="flex-1 h-0.5 rounded-full" style={{ backgroundColor: 'var(--lime-accent)' }} />
+            <div key={i} className="flex-1 h-0.5 rounded-full" style={{ backgroundColor: 'var(--volt)' }} />
           ))}
         </div>
       </div>
@@ -125,7 +125,7 @@ export default function OnboardingStep4({ disciplines, initialStats = {}, initia
           onClick={() => hasVolumes && onNext({ stats, coachNote })}
           disabled={!hasVolumes}
           className="flex-1 py-4 font-semibold rounded-xl disabled:opacity-40 text-base"
-          style={{ backgroundColor: 'var(--lime-accent)', color: '#1a2400' }}
+          style={{ backgroundColor: 'var(--volt)', color: 'var(--ink)' }}
         >
           Build my plan
         </button>
