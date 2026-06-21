@@ -38,6 +38,13 @@ if (existsSync(distPath)) {
     res.sendFile(path.join(distPath, 'version.json'))
   })
 
+  // sw.js — browsers re-fetch the SW script on every navigation to check for updates;
+  // no-store guarantees they always get the latest version rather than a stale copy
+  app.get('/sw.js', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store')
+    res.sendFile(path.join(distPath, 'sw.js'))
+  })
+
   // Public folder (images, favicon, etc.) — moderate cache, no immutable
   app.use(express.static(distPath, { index: false, maxAge: '1h' }))
 
