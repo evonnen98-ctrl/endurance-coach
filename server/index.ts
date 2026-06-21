@@ -32,6 +32,12 @@ if (existsSync(distPath)) {
     immutable: true,
   }))
 
+  // version.json — fetched by the running bundle to detect stale deploys; must never be cached
+  app.get('/version.json', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store')
+    res.sendFile(path.join(distPath, 'version.json'))
+  })
+
   // Public folder (images, favicon, etc.) — moderate cache, no immutable
   app.use(express.static(distPath, { index: false, maxAge: '1h' }))
 
