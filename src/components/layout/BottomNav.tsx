@@ -20,7 +20,7 @@ const labelStyle = {
 
 export default function BottomNav() {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 safe-bottom z-40 bg-white" style={{ borderTop: '1px solid var(--graphite-300)' }}>
+    <nav className="fixed bottom-0 left-0 right-0 safe-bottom z-40 bg-ink">
       <div className="max-w-[860px] mx-auto flex">
         {tabs.map(({ to, label, Icon }) => (
           <NavLink
@@ -39,9 +39,9 @@ export default function BottomNav() {
                 <Icon
                   size={19}
                   strokeWidth={isActive ? 2 : 1.5}
-                  style={{ color: isActive ? 'var(--ink)' : 'var(--graphite-500)' }}
+                  style={{ color: isActive ? 'var(--volt)' : 'var(--graphite-500)' }}
                 />
-                <span style={{ ...labelStyle, color: isActive ? 'var(--ink)' : 'var(--graphite-500)' }}>
+                <span style={{ ...labelStyle, color: isActive ? 'var(--volt)' : 'var(--graphite-500)' }}>
                   {label}
                 </span>
               </>
