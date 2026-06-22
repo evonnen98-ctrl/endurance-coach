@@ -233,9 +233,10 @@ export default function CoachPage() {
             <div ref={bottomRef} />
           </div>
 
-          {/* Input bar */}
-          <div className="bg-white px-4 py-3 flex-shrink-0 safe-bottom" style={{ borderTop: '1px solid var(--mist)' }}>
-            <div className="flex gap-2 items-end rounded-xl px-3 py-2" style={{ backgroundColor: 'var(--mist)' }}>
+          {/* Input bar — pt-3 for top breathing room; padding-bottom clears the fixed BottomNav
+               (56px nav content + safe-area-inset so it works on notched iPhones too) */}
+          <div className="bg-white px-4 pt-3 flex-shrink-0" style={{ borderTop: '1px solid var(--mist)', paddingBottom: 'calc(56px + env(safe-area-inset-bottom, 0px))' }}>
+            <div className="flex gap-2 items-center rounded-xl px-3 py-2" style={{ backgroundColor: 'var(--mist)' }}>
               <textarea
                 rows={1}
                 placeholder="Message your coach…"
