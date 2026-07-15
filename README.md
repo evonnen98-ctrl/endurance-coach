@@ -2,7 +2,7 @@
 
 An AI-powered triathlon coaching application that generates and adapts personalized training plans based on a user's goals, fitness level, schedule, and preferences.
 
-👉 **[Live Demo](https://endurance-coach-production.up.railway.app/)**
+👉 **[Live Demo](https://endurance-coach-umber.vercel.app/today)**
 
 ## Why I built this
 I built this while training for my first Half Ironman. I wanted to see if AI could provide tailored coaching without the high cost of hiring a one-on-one coach or joining a triathlon club.
